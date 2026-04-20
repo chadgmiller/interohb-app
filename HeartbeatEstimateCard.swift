@@ -17,6 +17,7 @@ struct HeartbeatEstimateCard: View {
     @Binding var revealTask: Task<Void, Never>?
     @Binding var showHeartbeatEstimateHelp: Bool
     @Binding var showHeartbeatEstimateSheet: Bool
+    @Binding var heartbeatDetectionMethod: Session.HeartbeatDetectionMethod
 
     let hr: HeartBeatManager
     let onSubmitEstimate: (_ estimate: Int, _ actual: Int, _ error: Int, _ signedError: Int) -> Void
@@ -90,6 +91,7 @@ struct HeartbeatEstimateCard: View {
                 isRevealed: $isRevealed,
                 revealTask: $revealTask,
                 showHeartbeatEstimateSheet: $showHeartbeatEstimateSheet,
+                heartbeatDetectionMethod: $heartbeatDetectionMethod,
                 hr: hr,
                 setCooldownTimer: { _ in }
             )
@@ -151,6 +153,7 @@ struct HeartbeatEstimateHelpScreen: View {
     @Previewable @State var revealTask: Task<Void, Never>? = nil
     @Previewable @State var showHeartbeatEstimateHelp: Bool = false
     @Previewable @State var showHeartbeatEstimateSheet: Bool = false
+    @Previewable @State var heartbeatDetectionMethod: Session.HeartbeatDetectionMethod = .internalOnly
 
     Card {
         HeartbeatEstimateCard(
@@ -163,6 +166,7 @@ struct HeartbeatEstimateHelpScreen: View {
             revealTask: $revealTask,
             showHeartbeatEstimateHelp: $showHeartbeatEstimateHelp,
             showHeartbeatEstimateSheet: $showHeartbeatEstimateSheet,
+            heartbeatDetectionMethod: $heartbeatDetectionMethod,
             hr: HeartBeatManager(),
             onSubmitEstimate: { _, _, _, _ in }
         )

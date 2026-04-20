@@ -16,6 +16,7 @@ struct AwarenessSessionSheet: View {
     @Binding var baselineHR: Int?
     @Binding var awarenessStartTime: Date?
     @Binding var showAwarenessSheet: Bool
+    @Binding var heartbeatDetectionMethod: Session.HeartbeatDetectionMethod
 
     @ObservedObject var hr: HeartBeatManager
 
@@ -45,6 +46,10 @@ struct AwarenessSessionSheet: View {
         baselineHR ?? hr.heartRate
     }
 
+    private var isSessionActive: Bool {
+        isAwarenessRunning || isAwarenessPaused
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -55,6 +60,20 @@ struct AwarenessSessionSheet: View {
                     .pickerStyle(.menu)
                     .tint(AppColors.textPrimary)
                     .font(.headline)
+                }
+
+                Section("Heartbeat Sensing") {
+                    Picker("How did you detect it?", selection: $heartbeatDetectionMethod) {
+                        ForEach(Session.HeartbeatDetectionMethod.allCases) { method in
+                            Text(method.label).tag(method)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(AppColors.textPrimary)
+
+                    Text("Use “Detected calmly” when you are not pressing on pulse points like your neck or wrist.")
+                        .font(.footnote)
+                        .foregroundStyle(AppColors.textSecondary)
                 }
 
                 Section {
@@ -80,10 +99,12 @@ struct AwarenessSessionSheet: View {
                     Toggle("Use Duration", isOn: $stagedUseTimeLimit)
                         .tint(AppColors.breathTeal)
                         .font(.headline)
+                        .disabled(isSessionActive)
 
                     if stagedUseTimeLimit {
                         Stepper("Limit:                       \(stagedTimeLimitSec) sec", value: $stagedTimeLimitSec, in: 15...300, step: 15)
                             .font(.headline)
+                            .disabled(isSessionActive)
                     }
                 }
 
@@ -120,39 +141,51 @@ struct AwarenessSessionSheet: View {
                                 }
                             }
 
-                            Button {
-                                if isAwarenessPaused {
-                                    isAwarenessPaused = false
-                                    if timer == nil {
-                                        let t = Timer(timeInterval: 1.0, repeats: true) { _ in
-                                            NotificationCenter.default.post(name: .init("AwarenessTick"), object: nil)
-                                        }
-                                        RunLoop.main.add(t, forMode: .common)
-                                        timer = t
-                                    }
-                                } else {
-                                    isAwarenessPaused = true
-                                    timer?.invalidate()
-                                    timer = nil
+                            HStack {
+                                if activeTimeLimitSec == nil {
+                                    Spacer()
                                 }
-                            } label: {
-                                Label(isAwarenessPaused ? "Resume" : "Pause", systemImage: isAwarenessPaused ? "play.fill" : "pause.fill")
-                                    .foregroundStyle(isAwarenessPaused ? AppColors.breathTeal : AppColors.textSecondary)
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(AppColors.breathTeal)
 
-                            Button {
-                                isAwarenessPaused = true
-                                timer?.invalidate()
-                                timer = nil
-                                showAbortConfirm = true
-                            } label: {
-                                Label("Finish Session", systemImage: "checkmark.circle.fill")
+                                VStack(spacing: 10) {
+                                    Button {
+                                        if isAwarenessPaused {
+                                            isAwarenessPaused = false
+                                            if timer == nil {
+                                                let t = Timer(timeInterval: 1.0, repeats: true) { _ in
+                                                    NotificationCenter.default.post(name: .init("AwarenessTick"), object: nil)
+                                                }
+                                                RunLoop.main.add(t, forMode: .common)
+                                                timer = t
+                                            }
+                                        } else {
+                                            isAwarenessPaused = true
+                                            timer?.invalidate()
+                                            timer = nil
+                                        }
+                                    } label: {
+                                        Label(isAwarenessPaused ? "Resume" : "Pause", systemImage: isAwarenessPaused ? "play.fill" : "pause.fill")
+                                            .foregroundStyle(isAwarenessPaused ? AppColors.breathTeal : AppColors.textSecondary)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .tint(AppColors.breathTeal)
+
+                                    Button {
+                                        isAwarenessPaused = true
+                                        timer?.invalidate()
+                                        timer = nil
+                                        showAbortConfirm = true
+                                    } label: {
+                                        Label("Finish Session", systemImage: "checkmark.circle.fill")
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .foregroundStyle(Color(.white))
+                                    .tint(AppColors.breathTeal)
+                                }
+
+                                if activeTimeLimitSec == nil {
+                                    Spacer()
+                                }
                             }
-                            .buttonStyle(.borderedProminent)
-                            .foregroundStyle(Color(.white))
-                            .tint(AppColors.breathTeal)
                         }
                     } else {
                         TimelineView(.periodic(from: .now, by: 1.0)) { _ in

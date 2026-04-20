@@ -79,8 +79,14 @@ struct HistoryView: View {
                             .font(.subheadline)
                             .foregroundStyle(AppColors.textSecondary)
 
+                        if let detectionLabel = session.heartbeatDetectionMethodLabel {
+                            Text(detectionLabel)
+                                .font(.caption)
+                                .foregroundStyle(AppColors.textSecondary)
+                        }
+
                         HStack(spacing: 12) {
-                            Text("Score: \(session.score)")
+                            Text("Training Score: \(session.score)")
                                 .font(.subheadline)
                         }
 
@@ -224,6 +230,16 @@ private struct PulseSessionDetailView: View {
                         .foregroundStyle(AppColors.textSecondary)
                 }
 
+                if let detectionLabel = session.heartbeatDetectionMethodLabel {
+                    HStack {
+                        Text("Heartbeat Sensing")
+                            .font(.headline)
+                        Spacer()
+                        Text(detectionLabel)
+                            .foregroundStyle(AppColors.textSecondary)
+                    }
+                }
+
                 if let method = session.heartbeatEstimationMethod {
                     HStack {
                         Text("Method")
@@ -235,11 +251,21 @@ private struct PulseSessionDetailView: View {
                 }
                 
                 HStack {
-                    Text("Score")
+                    Text("Training Score")
                         .font(.headline)
                     Spacer()
                     Text("\(session.score)")
                         .foregroundStyle(AppColors.textSecondary)
+                }
+
+                if let baseScore = session.baseScore {
+                    HStack {
+                        Text("Accuracy Score")
+                            .font(.headline)
+                        Spacer()
+                        Text("\(baseScore)")
+                            .foregroundStyle(AppColors.textSecondary)
+                    }
                 }
             }
 

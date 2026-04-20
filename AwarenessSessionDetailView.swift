@@ -25,6 +25,8 @@ protocol AwarenessSessionRepresentable {
     var awarenessCoachLine: String? { get }
     var awarenessTags: [String]? { get }
     var awarenessHinderTags: [String]? { get }
+    var heartbeatDetectionMethodLabel: String? { get }
+    var baseScore: Int? { get }
 }
 
 extension Session: AwarenessSessionRepresentable {}
@@ -108,8 +110,18 @@ struct AwarenessSessionDetailView: View {
                         .foregroundStyle(AppColors.textSecondary)
                 }
 
+                if let detectionLabel = session.heartbeatDetectionMethodLabel {
+                    HStack {
+                        Text("Heartbeat Sensing")
+                            .font(.headline)
+                        Spacer()
+                        Text(detectionLabel)
+                            .foregroundStyle(AppColors.textSecondary)
+                    }
+                }
+
                 HStack {
-                    Text("Score")
+                    Text("Training Score")
                         .font(.headline)
                     Spacer()
                     Text("\(session.score)")
@@ -120,6 +132,16 @@ struct AwarenessSessionDetailView: View {
                 .padding(.vertical, 8)
                 .background(AppColors.breathTeal.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                if let baseScore = session.baseScore {
+                    HStack {
+                        Text("Accuracy Score")
+                            .font(.headline)
+                        Spacer()
+                        Text("\(baseScore)")
+                            .foregroundStyle(AppColors.textSecondary)
+                    }
+                }
 
                 if let coachLine = session.awarenessCoachLine, !coachLine.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {

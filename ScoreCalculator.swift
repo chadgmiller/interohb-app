@@ -9,26 +9,46 @@ import Foundation
 
 struct ScoreCalculator {
 
-    static func clamp(_ x: Double, min: Double = 0, max: Double = 100) -> Double {
+    nonisolated static func clamp(_ x: Double, min: Double = 0, max: Double = 100) -> Double {
         Swift.max(min, Swift.min(max, x))
     }
 
-    static func average(_ xs: [Double]) -> Double? {
+    nonisolated static func average(_ xs: [Double]) -> Double? {
         guard !xs.isEmpty else { return nil }
         return xs.reduce(0, +) / Double(xs.count)
     }
 
-    static func stddev(_ xs: [Double]) -> Double? {
+    nonisolated static func stddev(_ xs: [Double]) -> Double? {
         guard xs.count >= 2, let mean = average(xs) else { return nil }
         let variance = xs.reduce(0) { $0 + pow($1 - mean, 2) } / Double(xs.count)
         return sqrt(variance)
     }
 
-    static func heartbeatEstimateScore(error: Int) -> Int {
+    nonisolated static func heartbeatEstimateScore(error: Int) -> Int {
         max(0, 100 - 5 * abs(error))
     }
 
-    static func heartbeatEstimateQualityFlag(
+    nonisolated static func awarenessEstimateScore(error: Int) -> Int {
+        max(0, 100 - 5 * abs(error))
+    }
+
+    nonisolated static func detectionMethodMultiplier(_ detectionMethod: Session.HeartbeatDetectionMethod?) -> Double {
+        switch detectionMethod {
+        case .pulsePointTouch:
+            return 0.8
+        case .internalOnly, .none:
+            return 1.0
+        }
+    }
+
+    nonisolated static func adjustedScore(
+        rawScore: Int,
+        detectionMethod: Session.HeartbeatDetectionMethod?
+    ) -> Int {
+        Int(clamp(Double(rawScore) * detectionMethodMultiplier(detectionMethod)).rounded())
+    }
+
+    nonisolated static func heartbeatEstimateQualityFlag(
         actualHR: Int?,
         isConnected: Bool,
         signalConfidence: Session.SignalConfidence = .unknown
@@ -47,7 +67,7 @@ struct ScoreCalculator {
         }
     }
 
-    static func performanceScoreV1(errors: [Int]) -> (score: Int?, accuracy: Int?, consistency: Int?) {
+    nonisolated static func performanceScoreV1(errors: [Int]) -> (score: Int?, accuracy: Int?, consistency: Int?) {
         let vals = errors.map { Double($0) }
         guard let avg = average(vals) else { return (nil, nil, nil) }
         let sd = stddev(vals) ?? 0

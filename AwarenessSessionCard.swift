@@ -32,6 +32,7 @@ struct AwarenessSessionCard: View {
     @Binding var showAwarenessDeltaEstimateSheet: Bool
     @Binding var showAwarenessHelp: Bool
     @Binding var awarenessDeltaEstimate: Int
+    @Binding var heartbeatDetectionMethod: Session.HeartbeatDetectionMethod
     @Binding var selectedAwarenessTags: Set<String>
     @Binding var selectedAwarenessHinderTags: Set<String>
     let awarenessHelpTags: [String]
@@ -184,6 +185,7 @@ struct AwarenessSessionCard: View {
                     baselineHR: $awarenessBaseline,
                     awarenessStartTime: $awarenessStartTime,
                     showAwarenessSheet: $showAwarenessSessionSheet,
+                    heartbeatDetectionMethod: $heartbeatDetectionMethod,
                     hr: hr,
                     isAwarenessRunning: $isAwarenessRunning,
                     isAwarenessPaused: $isAwarenessPaused,
@@ -211,10 +213,18 @@ struct AwarenessSessionCard: View {
                     }
 
                     Section("Session") {
+                        Picker("Context", selection: $context) {
+                            ForEach(AppContexts.all, id: \.self) { selection in
+                                Text(selection).tag(selection)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .tint(AppColors.textPrimary)
+
                         HStack {
-                            Text("Context")
+                            Text("Heartbeat Sensing")
                             Spacer()
-                            Text(context)
+                            Text(heartbeatDetectionMethod.label)
                                 .foregroundStyle(AppColors.textSecondary)
                         }
 
@@ -250,7 +260,7 @@ struct AwarenessSessionCard: View {
                         Button {
                             onSubmitAwarenessEstimate()
                         } label: {
-                            Label("Save Estimate", systemImage: "checkmark.circle")
+                            Label("Enter Estimate", systemImage: "checkmark.circle")
                                 .frame(maxWidth: .infinity, alignment: .center)
                         }
                     }
@@ -288,6 +298,13 @@ struct AwarenessSessionCard: View {
                             }
 
                             HStack {
+                                Text("Heartbeat Sensing")
+                                Spacer()
+                                Text(session.heartbeatDetectionMethodLabel ?? heartbeatDetectionMethod.label)
+                                    .foregroundStyle(AppColors.textSecondary)
+                            }
+
+                            HStack {
                                 Text("Session Outcome")
                                 Spacer()
                                 Text(deltaAccuracyText(for: session))
@@ -297,7 +314,7 @@ struct AwarenessSessionCard: View {
                             }
                             
                             HStack {
-                                Text("Score")
+                                Text("Training Score")
                                 Spacer()
                                 Text("\(session.score)")
                                     .font(.title3.weight(.bold))
@@ -306,6 +323,15 @@ struct AwarenessSessionCard: View {
                             .padding(.vertical, 8)
                             .background(AppColors.breathTeal.opacity(0.12))
                             .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                            if let baseScore = session.baseScore {
+                                HStack {
+                                    Text("Accuracy Score")
+                                    Spacer()
+                                    Text("\(baseScore)")
+                                        .foregroundStyle(AppColors.textSecondary)
+                                }
+                            }
 
                             if let coach = session.awarenessCoachLine, !coach.isEmpty {
                                 VStack(alignment: .leading, spacing: 4) {

@@ -27,22 +27,22 @@ struct OnboardingView: View {
     private let pages: [OnboardingPage] = [
         OnboardingPage(
             title: "Build body awareness",
-            subtitle: "InteroHB helps you practice noticing internal body signals by estimating your heartbeat and comparing it with a measured heart-rate reference from a connected fitness device.",
+            subtitle: "InteroHB helps users practice Interoception. Interoception is the perception and recognition of internal signals from your body, such as hunger, breathing, emotions and heartbeat.",
             systemImage: "figure.mind.and.body"
         ),
         OnboardingPage(
-            title: "Estimate your heartbeat",
-            subtitle: "Use Heartbeat Estimate to practice noticing and estimating your heartbeat, then compare your estimate with a measured heart-rate reference from a Bluetooth fitness device you choose to connect.",
+            title: "Find and estimate your heartbeat",
+            subtitle: "Use the Heartbeat Estimate activity to practice noticing and counting your heartbeat instantly, then compare your estimated count with a measured reference from a Bluetooth fitness device you choose to connect.",
             systemImage: "heart.text.square"
         ),
         OnboardingPage(
             title: "Practice heartbeat awareness",
-            subtitle: "Use Awareness Session to notice how your heartbeat feels across different moments, then compare that experience with the measured heart-rate reference during the session.",
+            subtitle: "Use the Awareness Session activity to recognzie how your heartbeat feels over a period of time, then compare that experience with the measured reference during the session.",
             systemImage: "waveform.path.ecg"
         ),
         OnboardingPage(
             title: "Connect your device",
-            subtitle: "InteroHB uses heart rate data from consumer fitness devices you choose. If several nearby devices share the same name, make sure you pick your own device.",
+            subtitle: "InteroHB uses connected sensor data from consumer fitness devices you choose such as a chest strap or fitness watch. If several nearby devices share the same name, make sure you pick your own device.",
             systemImage: "bolt.heart"
         ),
         OnboardingPage(

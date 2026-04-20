@@ -70,6 +70,16 @@ struct HeartbeatEstimateResultsSheet: View {
                             .foregroundStyle(AppColors.textSecondary)
                     }
 
+                    if let detectionLabel = session.heartbeatDetectionMethodLabel {
+                        HStack {
+                            Text("Heartbeat Sensing")
+                                .font(.headline)
+                            Spacer()
+                            Text(detectionLabel)
+                                .foregroundStyle(AppColors.textSecondary)
+                        }
+                    }
+
                     if let methodText {
                         HStack {
                             Text("Method")
@@ -81,7 +91,7 @@ struct HeartbeatEstimateResultsSheet: View {
                     }
 
                     HStack {
-                        Text("Score")
+                        Text("Training Score")
                             .font(.headline)
                         Spacer()
                         Text("\(session.score)")
@@ -132,6 +142,16 @@ struct HeartbeatEstimateResultsSheet: View {
                                 .font(.headline)
                             Spacer()
                             Text("\(duration)s")
+                                .foregroundStyle(AppColors.textSecondary)
+                        }
+                    }
+
+                    if let baseScore = session.baseScore {
+                        HStack {
+                            Text("Accuracy Score")
+                                .font(.headline)
+                            Spacer()
+                            Text("\(baseScore)")
                                 .foregroundStyle(AppColors.textSecondary)
                         }
                     }
@@ -244,5 +264,6 @@ struct HeartbeatEstimateResultsSheet: View {
         scoringModelVersion: "2.0"
     )
     s.heartbeatEstimationMethod = .observed
+    s.heartbeatDetectionMethod = .internalOnly
     return HeartbeatEstimateResultsSheet(session: s)
 }

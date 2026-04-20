@@ -139,6 +139,8 @@ struct HomeDashboardView: View {
 
     // Added new state for devices sheet
     @State private var showDevicesSheet = false
+    @State private var heartbeatEstimateDetectionMethod: Session.HeartbeatDetectionMethod = .internalOnly
+    @State private var awarenessDetectionMethod: Session.HeartbeatDetectionMethod = .internalOnly
 
     @State private var selectedAwarenessHinderTags: Set<String> = []
     @State private var lastAwarenessSessionID: UUID? = nil
@@ -352,7 +354,7 @@ struct HomeDashboardView: View {
             return
 
         case .completed(durationSec: let timeSec,
-                        baseline: let baseline,
+                        baseline: _,
                         endHR: let endHR):
             generator.notificationOccurred(.success)
             AudioServicesPlaySystemSound(1013)
@@ -381,8 +383,12 @@ struct HomeDashboardView: View {
             series: awarenessHRSeries,
             estimatedDeltaBpm: awarenessDeltaEstimate
         )
+        let rawScore = metrics.map { ScoreCalculator.awarenessEstimateScore(error: $0.absoluteDeltaErrorBpm) } ?? 0
+        let score = ScoreCalculator.adjustedScore(
+            rawScore: rawScore,
+            detectionMethod: awarenessDetectionMethod
+        )
         let awarenessModel = metrics.map(AwarenessSessionEvaluator.scoreAndNarrative)
-        let score = awarenessModel?.score ?? 0
         let note = awarenessModel?.noteLine ?? "Your estimate has been saved."
 
         lastAwarenessScore = score
@@ -397,6 +403,7 @@ struct HomeDashboardView: View {
             baseline: baseline,
             endHR: endHR,
             estimatedDelta: awarenessDeltaEstimate,
+            rawScore: rawScore,
             score: score,
             noteLine: note
         ) {
@@ -426,6 +433,7 @@ struct HomeDashboardView: View {
         baseline: Int,
         endHR: Int,
         estimatedDelta: Int,
+        rawScore: Int,
         score: Int,
         noteLine: String
     ) -> Session? {
@@ -467,7 +475,7 @@ struct HomeDashboardView: View {
             deviceType: hr.deviceType,
             deviceIdentifier: hr.deviceIdentifierString,
             appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
-            scoringModelVersion: "2.0",
+            scoringModelVersion: "2.1",
             insightModelVersion: "1.0"
         )
 
@@ -482,7 +490,8 @@ struct HomeDashboardView: View {
         session.awarenessEndBpm = endHR
         session.awarenessPlannedTimeLimitSec = awarenessUseTimeLimit ? awarenessTimeLimitSec : nil
         session.awarenessUsedTimeLimitSec = activeTimeLimitSec ?? (awarenessUseTimeLimit ? awarenessTimeLimitSec : nil)
-        session.normalizedAwarenessScore = Double(score)
+        session.heartbeatDetectionMethod = awarenessDetectionMethod
+        session.normalizedAwarenessScore = Double(rawScore)
         session.contextDifficultyAdjustedScore = Double(measuredDelta)
 
         modelContext.insert(session)
@@ -696,6 +705,7 @@ struct HomeDashboardView: View {
                     revealTask: $revealTask,
                     showHeartbeatEstimateHelp: $showHeartbeatEstimateHelp,
                     showHeartbeatEstimateSheet: $showHeartbeatEstimateSheet,
+                    heartbeatDetectionMethod: $heartbeatEstimateDetectionMethod,
                     hr: hr,
                     onSubmitEstimate: { estimate, actual, error, signedError in
                         let session = Session(
@@ -742,6 +752,7 @@ struct HomeDashboardView: View {
                     showAwarenessDeltaEstimateSheet: $showAwarenessDeltaEstimateSheet,
                     showAwarenessHelp: $showAwarenessHelp,
                     awarenessDeltaEstimate: $awarenessDeltaEstimate,
+                    heartbeatDetectionMethod: $awarenessDetectionMethod,
                     selectedAwarenessTags: $selectedAwarenessTags,
                     selectedAwarenessHinderTags: $selectedAwarenessHinderTags,
                     awarenessHelpTags: awarenessHelpTags,

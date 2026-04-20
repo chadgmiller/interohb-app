@@ -68,6 +68,7 @@ final class Session {
     // Heartbeat Estimate metadata
     var heartbeatEstimationMethodRaw: String? = nil
     var heartbeatTimedDurationSeconds: Int? = nil
+    var heartbeatDetectionMethodRaw: String? = nil
 
     // Future-friendly normalized values
     var normalizedHeartbeatAccuracy: Double?
@@ -94,6 +95,22 @@ final class Session {
         case observed
 
         var id: String { rawValue }
+    }
+
+    enum HeartbeatDetectionMethod: String, Codable, CaseIterable, Identifiable {
+        case internalOnly
+        case pulsePointTouch
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .internalOnly:
+                return "Detected calmly"
+            case .pulsePointTouch:
+                return "Felt pulse point"
+            }
+        }
     }
 
     enum CompletionStatus: String, Codable, CaseIterable, Identifiable {
@@ -165,6 +182,11 @@ final class Session {
         set { completionStatusRaw = newValue.rawValue }
     }
 
+    var heartbeatDetectionMethod: HeartbeatDetectionMethod? {
+        get { heartbeatDetectionMethodRaw.flatMap { HeartbeatDetectionMethod(rawValue: $0) } }
+        set { heartbeatDetectionMethodRaw = newValue?.rawValue }
+    }
+
     var qualityFlag: QualityFlag {
         get { QualityFlag(rawValue: qualityFlagRaw) ?? .medium }
         set { qualityFlagRaw = newValue.rawValue }
@@ -194,6 +216,19 @@ final class Session {
         if let v = awarenessSecondsValue { return v }
         guard isAwareness else { return nil }
         return estimate > 0 ? estimate : nil
+    }
+
+    var heartbeatDetectionMethodLabel: String? {
+        heartbeatDetectionMethod?.label
+    }
+
+    var baseScore: Int? {
+        switch sessionType {
+        case .heartbeatEstimate:
+            return normalizedHeartbeatAccuracy.map { Int($0.rounded()) }
+        case .awarenessSession:
+            return normalizedAwarenessScore.map { Int($0.rounded()) }
+        }
     }
 
     init(
@@ -275,6 +310,7 @@ final class Session {
 
         self.heartbeatEstimationMethodRaw = nil
         self.heartbeatTimedDurationSeconds = nil
+        self.heartbeatDetectionMethodRaw = nil
 
         self.normalizedHeartbeatAccuracy = nil
         self.normalizedAwarenessScore = nil

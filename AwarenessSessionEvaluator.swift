@@ -24,7 +24,7 @@ struct AwarenessSessionResult {
 
 enum AwarenessSessionEvaluator {
 
-    static func evaluate(
+    nonisolated static func evaluate(
         series: [(time: Int, hr: Int)],
         estimatedDeltaBpm: Int
     ) -> AwarenessSessionMetrics? {
@@ -48,8 +48,8 @@ enum AwarenessSessionEvaluator {
         )
     }
 
-    static func scoreAndNarrative(_ metrics: AwarenessSessionMetrics) -> AwarenessSessionResult {
-        let score = max(0, 100 - 5 * metrics.absoluteDeltaErrorBpm)
+    nonisolated static func scoreAndNarrative(_ metrics: AwarenessSessionMetrics) -> AwarenessSessionResult {
+        let score = ScoreCalculator.awarenessEstimateScore(error: metrics.absoluteDeltaErrorBpm)
 
         let noteLine: String
         switch metrics.absoluteDeltaErrorBpm {

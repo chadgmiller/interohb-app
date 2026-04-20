@@ -26,6 +26,7 @@ struct HeartbeatEstimateSheet: View {
     @Binding var isRevealed: Bool
     @Binding var revealTask: Task<Void, Never>?
     @Binding var showHeartbeatEstimateSheet: Bool
+    @Binding var heartbeatDetectionMethod: Session.HeartbeatDetectionMethod
 
     @State private var latestSession: Session? = nil
     @State private var showDeleteConfirm: Bool = false
@@ -99,6 +100,20 @@ struct HeartbeatEstimateSheet: View {
                     .pickerStyle(.menu)
                     .tint(AppColors.textPrimary)
                     .font(.headline)
+                }
+
+                Section("Heartbeat Sensing") {
+                    Picker("How did you detect it?", selection: $heartbeatDetectionMethod) {
+                        ForEach(Session.HeartbeatDetectionMethod.allCases) { method in
+                            Text(method.label).tag(method)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(AppColors.textPrimary)
+
+                    Text("Use “Detected calmly” when estimating without pressing on pulse points like your neck or wrist.")
+                        .font(.footnote)
+                        .foregroundStyle(AppColors.textSecondary)
                 }
 
                 Section("Method") {
@@ -310,6 +325,16 @@ struct HeartbeatEstimateSheet: View {
                                 .foregroundStyle(AppColors.textSecondary)
                         }
 
+                        if let detectionLabel = session.heartbeatDetectionMethodLabel {
+                            HStack {
+                                Text("Heartbeat Sensing")
+                                    .font(.headline)
+                                Spacer()
+                                Text(detectionLabel)
+                                    .foregroundStyle(AppColors.textSecondary)
+                            }
+                        }
+
                         HStack {
                             Text("Estimated Heartbeat")
                             Spacer()
@@ -343,11 +368,21 @@ struct HeartbeatEstimateSheet: View {
                         }
 
                         HStack {
-                            Text("Score")
+                            Text("Training Score")
                                 .font(.headline)
                             Spacer()
                             Text("\(session.score)")
                                 .foregroundStyle(AppColors.textSecondary)
+                        }
+
+                        if let baseScore = session.baseScore {
+                            HStack {
+                                Text("Accuracy Score")
+                                    .font(.headline)
+                                Spacer()
+                                Text("\(baseScore)")
+                                    .foregroundStyle(AppColors.textSecondary)
+                            }
                         }
 
                         Divider()
@@ -518,7 +553,11 @@ struct HeartbeatEstimateSheet: View {
         let endedAt = Date()
         let signedError = estimate - actual
         let error = abs(signedError)
-        let points = ScoreCalculator.heartbeatEstimateScore(error: error)
+        let rawScore = ScoreCalculator.heartbeatEstimateScore(error: error)
+        let adjustedScore = ScoreCalculator.adjustedScore(
+            rawScore: rawScore,
+            detectionMethod: heartbeatDetectionMethod
+        )
         let quality = ScoreCalculator.heartbeatEstimateQualityFlag(
             actualHR: actual,
             isConnected: hr.isConnected,
@@ -531,7 +570,7 @@ struct HeartbeatEstimateSheet: View {
             actualHR: actual,
             error: error,
             signedError: signedError,
-            score: points,
+            score: adjustedScore,
             timestamp: endedAt,
             startedAt: sessionStartedAt,
             endedAt: endedAt,
@@ -549,13 +588,14 @@ struct HeartbeatEstimateSheet: View {
             deviceType: deviceType,
             deviceIdentifier: hr.deviceIdentifierString,
             appVersion: appVersionString,
-            scoringModelVersion: "2.0",
+            scoringModelVersion: "2.1",
             insightModelVersion: "1.0"
         )
 
         newSession.heartbeatEstimationMethod = method
+        newSession.heartbeatDetectionMethod = heartbeatDetectionMethod
         newSession.heartbeatTimedDurationSeconds = timedDuration
-        newSession.normalizedHeartbeatAccuracy = Double(points)
+        newSession.normalizedHeartbeatAccuracy = Double(rawScore)
 
         Task { @MainActor in
             modelContext.insert(newSession)
@@ -568,9 +608,9 @@ struct HeartbeatEstimateSheet: View {
         showHeartbeatEstimateSheet = false
 
         let generator = UINotificationFeedbackGenerator()
-        if points >= 80 {
+        if adjustedScore >= 80 {
             generator.notificationOccurred(.success)
-        } else if points >= 40 {
+        } else if adjustedScore >= 40 {
             generator.notificationOccurred(.warning)
         } else {
             generator.notificationOccurred(.error)
@@ -583,7 +623,7 @@ struct HeartbeatEstimateSheet: View {
             isRevealed = false
         }
 
-        resultText = "Estimate: \(estimate) bpm • Actual: \(actual) bpm • Score: \(points)"
+        resultText = "Estimate: \(estimate) bpm • Actual: \(actual) bpm • Accuracy: \(rawScore) • Training Score: \(adjustedScore)"
         lastActionDate = .now
         setCooldownTimer(60)
     }
@@ -600,6 +640,7 @@ struct HeartbeatEstimateSheet: View {
         isRevealed: .constant(false),
         revealTask: .constant(nil),
         showHeartbeatEstimateSheet: .constant(true),
+        heartbeatDetectionMethod: .constant(.internalOnly),
         hr: hr,
         setCooldownTimer: { _ in }
     )

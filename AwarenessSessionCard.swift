@@ -7,61 +7,22 @@
 
 import SwiftUI
 import SwiftData
-import Combine
 
 struct AwarenessSessionCard: View {
+    @EnvironmentObject private var route: AppRoute
+    @Bindable var awareness: AwarenessSessionModel
+    @Bindable var coordinator: HomeDashboardCoordinator
     @ObservedObject var hr: HeartBeatManager
+    let modelContext: ModelContext
 
-    @Binding var isAwarenessRunning: Bool
-    @Binding var isAwarenessPaused: Bool
-    @Binding var awarenessBaseline: Int?
-    @Binding var awarenessStartTime: Date?
-    @Binding var awarenessSessionResult: String
-    @Binding var showStopConfirm: Bool
-    @Binding var elapsedSec: Int
-    @Binding var timer: Timer?
-    @Binding var showAwarenessSessionSheet: Bool
-    @Binding var awarenessUseTimeLimit: Bool
-    @Binding var awarenessTimeLimitSec: Int
-    @Binding var activeTimeLimitSec: Int?
-    @Binding var showAbortConfirm: Bool
-    @Binding var showAwarenessSignalLossAlert: Bool
-    @Binding var lastAwarenessScore: Int?
-    @Binding var lastAwarenessCoachLine: String?
-    @Binding var showAwarenessSessionResultsSheet: Bool
-    @Binding var showAwarenessDeltaEstimateSheet: Bool
-    @Binding var showAwarenessHelp: Bool
-    @Binding var awarenessDeltaEstimate: Int
-    @Binding var heartbeatDetectionMethod: Session.HeartbeatDetectionMethod
-    @Binding var selectedAwarenessTags: Set<String>
-    @Binding var selectedAwarenessHinderTags: Set<String>
-    let awarenessHelpTags: [String]
-    let awarenessHinderTags: [String]
-    @Binding var awarenessHRSeries: [(time: Int, hr: Int)]
-    @Binding var context: String
-    @Binding var lastAwarenessDate: Date?
-    @Binding var lastAwarenessSessionID: UUID?
-    @Binding var lastActionDate: Date?
-    @Binding var pendingAwarenessDurationSec: Int?
-    @Binding var pendingAwarenessEndHR: Int?
-
-    let onSubmitAwarenessEstimate: () -> Void
-    let showToast: (String) -> Void
-    let awarenessTitleRow: AnyView
-    let awarenessSubtitle: AnyView
-    let awarenessSettingsSummary: AnyView
-    let awarenessStartButton: AnyView
-    let awarenessHelpSheet: AnyView
-
-    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Session.timestamp, order: .reverse) private var sessions: [Session]
     @State private var showDeleteConfirm = false
 
     private var latestAwarenessSession: Session? {
-        if let id = lastAwarenessSessionID {
+        if let id = awareness.lastSessionID {
             return sessions.first(where: { $0.id == id })
         }
-        if let date = lastAwarenessDate {
+        if let date = awareness.lastDate {
             return sessions.first(where: { $0.isAwareness && $0.timestamp == date })
         }
         return sessions.first(where: { $0.isAwareness })
@@ -78,14 +39,14 @@ struct AwarenessSessionCard: View {
         if let session = latestAwarenessSession {
             return Set(session.awarenessTags ?? []).contains(tag)
         }
-        return selectedAwarenessTags.contains(tag)
+        return awareness.selectedHelpTags.contains(tag)
     }
 
     private func hinderSelected(_ tag: String) -> Bool {
         if let session = latestAwarenessSession {
             return Set(session.awarenessHinderTags ?? []).contains(tag)
         }
-        return selectedAwarenessHinderTags.contains(tag)
+        return awareness.selectedHinderTags.contains(tag)
     }
 
     private func toggleHelpfulTagPersist(_ tag: String) {
@@ -95,10 +56,10 @@ struct AwarenessSessionCard: View {
             session.awarenessTags = set.isEmpty ? nil : Array(set).sorted()
             try? modelContext.save()
         } else {
-            if selectedAwarenessTags.contains(tag) {
-                selectedAwarenessTags.remove(tag)
+            if awareness.selectedHelpTags.contains(tag) {
+                awareness.selectedHelpTags.remove(tag)
             } else {
-                selectedAwarenessTags.insert(tag)
+                awareness.selectedHelpTags.insert(tag)
             }
         }
     }
@@ -110,62 +71,96 @@ struct AwarenessSessionCard: View {
             session.awarenessHinderTags = set.isEmpty ? nil : Array(set).sorted()
             try? modelContext.save()
         } else {
-            if selectedAwarenessHinderTags.contains(tag) {
-                selectedAwarenessHinderTags.remove(tag)
+            if awareness.selectedHinderTags.contains(tag) {
+                awareness.selectedHinderTags.remove(tag)
             } else {
-                selectedAwarenessHinderTags.insert(tag)
+                awareness.selectedHinderTags.insert(tag)
             }
         }
     }
 
-    struct SelectableTagRow: View {
-        let text: String
-        let isSelected: Bool
-        let isHelpful: Bool
-        let action: () -> Void
+    // MARK: - View Builders (moved from HomeDashboardView)
 
-        var body: some View {
-            Button(action: action) {
-                HStack(alignment: .center, spacing: 8) {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(iconColor)
-                        .padding(.top, 1)
-
-                    Text(text)
-                        .font(.footnote)
-                        .foregroundStyle(AppColors.textPrimary)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.vertical, 6)
-                .padding(.horizontal, 10)
-                .background(backgroundColor)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(borderColor, lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+    private var awarenessTitleRow: some View {
+        HStack(spacing: 8) {
+            Text("Flow")
+                .font(.headline)
+            Button {
+                awareness.showHelp = true
+            } label: {
+                Image(systemName: "questionmark.circle")
+                    .font(.subheadline)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("What is Flow?")
         }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
 
-        private var backgroundColor: Color {
-            guard isSelected else { return AppColors.cardSurface }
-            return isHelpful ? AppColors.helpedTagBackground : AppColors.hinderTagBackground
-        }
-
-        private var borderColor: Color {
-            guard isSelected else { return AppColors.chartGrid }
-            return isHelpful
-                ? AppColors.helpedTagForeground.opacity(0.35)
-                : AppColors.hinderTagForeground.opacity(0.35)
-        }
-
-        private var iconColor: Color {
-            guard isSelected else { return AppColors.textMuted }
-            return isHelpful ? AppColors.helpedTagForeground : AppColors.hinderTagForeground
+    private var awarenessSubtitle: some View {
+        VStack(alignment: .center, spacing: 6) {
+            Text("Track your heartbeat perception over time")
+                .font(.footnote)
+                .foregroundStyle(AppColors.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+            Spacer()
         }
     }
+
+    private var awarenessStartButton: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Spacer()
+                Button {
+                    awareness.showSessionSheet = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "hand.tap")
+                        Text("Start Flow")
+                            .font(.headline)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(AppColors.breathTeal)
+                .shadow(color: AppColors.breathTeal.opacity(0.5), radius: 6, x: 0, y: 3)
+                .disabled(!hr.canUseCurrentReading)
+                Spacer()
+            }
+            Spacer()
+
+            if !hr.isConnected || !hr.isStreaming {
+                Text("Connect a Bluetooth heart rate device.")
+                    .font(.footnote)
+                    .foregroundStyle(AppColors.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+    }
+
+    private var awarenessHelpSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("\u{2022} Flow helps you observe how your heartbeat feels over a short period of time, then compare your estimate of that change with a measured heart-rate reference.\n\n\u{2022} With repeated use, you may become more familiar with how heartbeat changes feel in different situations.\n\n\u{2022} This feature is intended for general wellness and educational use only. It does not diagnose, treat, or monitor any medical condition.")
+                        .font(.subheadline)
+                        .foregroundStyle(AppColors.textSecondary)
+                }
+                .padding(20)
+            }
+            .navigationTitle("What is Flow?")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(AppColors.screenBackground, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { awareness.showHelp = false }
+                }
+            }
+        }
+        .background(AppColors.screenBackground.ignoresSafeArea())
+    }
+
+    // MARK: - Body
 
     var body: some View {
         VStack(alignment: .center, spacing: 8) {
@@ -174,46 +169,23 @@ struct AwarenessSessionCard: View {
             awarenessStartButton
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .sheet(isPresented: $showAwarenessSessionSheet) {
-            VStack { 
-                AwarenessSessionSheet(
-                    context: $context,
-                    useTimeLimit: $awarenessUseTimeLimit,
-                    timeLimitSec: $awarenessTimeLimitSec,
-                    lastAwarenessDate: $lastAwarenessDate,
-                    lastActionDate: $lastActionDate,
-                    baselineHR: $awarenessBaseline,
-                    awarenessStartTime: $awarenessStartTime,
-                    showAwarenessSheet: $showAwarenessSessionSheet,
-                    heartbeatDetectionMethod: $heartbeatDetectionMethod,
-                    hr: hr,
-                    isAwarenessRunning: $isAwarenessRunning,
-                    isAwarenessPaused: $isAwarenessPaused,
-                    elapsedSec: $elapsedSec,
-                    activeTimeLimitSec: $activeTimeLimitSec,
-                    timer: $timer,
-                    showAbortConfirm: $showAbortConfirm,
-                    showAwarenessSignalLossAlert: $showAwarenessSignalLossAlert,
-                    setCooldownTimer: { _ in }
-                )
-            }
-            .onReceive(Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()) { _ in
-                if let start = awarenessStartTime, isAwarenessRunning, !isAwarenessPaused {
-                    let newElapsed = max(0, Int(Date().timeIntervalSince(start)))
-                    if newElapsed != elapsedSec { elapsedSec = newElapsed }
-                }
-            }
+        .sheet(isPresented: $awareness.showSessionSheet) {
+            AwarenessSessionSheet(
+                awareness: awareness,
+                coordinator: coordinator,
+                hr: hr
+            )
         }
-        .sheet(isPresented: $showAwarenessDeltaEstimateSheet) {
+        .sheet(isPresented: $awareness.showDeltaEstimateSheet) {
             NavigationStack {
                 Form {
                     Section {
-                        Text("Estimate how much your heartbeat changed over the full session. You’ll compare that estimate with the measured heart-rate reference next.")
+                        Text("Estimate how much your heartbeat changed over the full session. You\u{2019}ll compare that estimate with the measured heart-rate reference next.")
                             .foregroundStyle(AppColors.textSecondary)
                     }
 
                     Section("Session") {
-                        Picker("Context", selection: $context) {
+                        Picker("Context", selection: $coordinator.context) {
                             ForEach(AppContexts.all, id: \.self) { selection in
                                 Text(selection).tag(selection)
                             }
@@ -224,11 +196,11 @@ struct AwarenessSessionCard: View {
                         HStack {
                             Text("Heartbeat Sensing")
                             Spacer()
-                            Text(heartbeatDetectionMethod.label)
+                            Text(awareness.detectionMethod.label)
                                 .foregroundStyle(AppColors.textSecondary)
                         }
 
-                        if let duration = pendingAwarenessDurationSec {
+                        if let duration = awareness.pendingDurationSec {
                             HStack {
                                 Text("Duration")
                                 Spacer()
@@ -240,13 +212,13 @@ struct AwarenessSessionCard: View {
 
                     Section("Your Heartbeat Change Estimate") {
                         Stepper(
-                            value: $awarenessDeltaEstimate,
+                            value: $awareness.deltaEstimate,
                             in: -40...40
                         ) {
                             HStack {
                                 Text("Estimated change")
                                 Spacer()
-                                Text(signedBpm(awarenessDeltaEstimate))
+                                Text(signedBpm(awareness.deltaEstimate))
                                     .foregroundStyle(AppColors.textSecondary)
                             }
                         }
@@ -258,7 +230,11 @@ struct AwarenessSessionCard: View {
 
                     Section {
                         Button {
-                            onSubmitAwarenessEstimate()
+                            awareness.submitDeltaEstimate(
+                                hr: hr,
+                                modelContext: modelContext,
+                                sharedContext: coordinator.context
+                            )
                         } label: {
                             Label("Enter Estimate", systemImage: "checkmark.circle")
                                 .frame(maxWidth: .infinity, alignment: .center)
@@ -274,15 +250,15 @@ struct AwarenessSessionCard: View {
                 .background(AppColors.screenBackground.ignoresSafeArea())
             }
         }
-        .sheet(isPresented: $showAwarenessHelp) {
+        .sheet(isPresented: $awareness.showHelp) {
             awarenessHelpSheet
         }
-        .sheet(isPresented: $showAwarenessSessionResultsSheet) {
+        .sheet(isPresented: $awareness.showResultsSheet) {
             NavigationStack {
                 Form {
                     if let session = latestAwarenessSession {
                         Section("Summary") {
-        
+
                             HStack {
                                 Text("Date/Time")
                                 Spacer()
@@ -293,14 +269,14 @@ struct AwarenessSessionCard: View {
                             HStack {
                                 Text("Context")
                                 Spacer()
-                                Text(context)
+                                Text(coordinator.context)
                                     .foregroundStyle(AppColors.textSecondary)
                             }
 
                             HStack {
                                 Text("Heartbeat Sensing")
                                 Spacer()
-                                Text(session.heartbeatDetectionMethodLabel ?? heartbeatDetectionMethod.label)
+                                Text(session.heartbeatDetectionMethodLabel ?? awareness.detectionMethod.label)
                                     .foregroundStyle(AppColors.textSecondary)
                             }
 
@@ -312,7 +288,7 @@ struct AwarenessSessionCard: View {
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 1)
                             }
-                            
+
                             HStack {
                                 Text("Training Score")
                                 Spacer()
@@ -343,7 +319,7 @@ struct AwarenessSessionCard: View {
                         }
 
                         Section("Metrics") {
-                    
+
                             if let baseline = session.awarenessBaselineBpm {
                                 HStack {
                                     Text("Starting reference")
@@ -351,7 +327,6 @@ struct AwarenessSessionCard: View {
                                     Spacer()
                                     Text("\(baseline) bpm")
                                         .foregroundStyle(AppColors.textSecondary)
-
                                 }
                             }
 
@@ -414,15 +389,14 @@ struct AwarenessSessionCard: View {
                                     Spacer()
                                     Text("\(actual)s")
                                         .foregroundStyle(AppColors.textSecondary)
-                                        
                                 }
                             }
                         }
 
-                        if !awarenessHRSeries.isEmpty {
+                        if !awareness.hrSeries.isEmpty {
                             Section("Measured Heart-Rate Reference") {
                                 AwarenessSessionChart(
-                                    data: awarenessHRSeries,
+                                    data: awareness.hrSeries,
                                     targetHR: nil,
                                     baselineHR: session.awarenessBaselineBpm
                                 )
@@ -432,40 +406,50 @@ struct AwarenessSessionCard: View {
 
                         Section("What helped most?") {
                             VStack(spacing: 0) {
-                                ForEach(awarenessHelpTags, id: \.self) { tag in
-                                    SelectableTagRow(
+                                ForEach(SessionReflectionTags.helpful, id: \.self) { tag in
+                                    SelectableSessionTagRow(
                                         text: tag,
                                         isSelected: helpfulSelected(tag),
-                                        isHelpful: true
-                                    ) {
+                                        isHelpful: true,
+                                        action: {
                                         toggleHelpfulTagPersist(tag)
-                                    }
+                                        }
+                                    )
                                 }
                             }
                         }
 
                         Section("What got in the way?") {
                             VStack(spacing: 0) {
-                                ForEach(awarenessHinderTags, id: \.self) { tag in
-                                    SelectableTagRow(
+                                ForEach(SessionReflectionTags.hinder, id: \.self) { tag in
+                                    SelectableSessionTagRow(
                                         text: tag,
                                         isSelected: hinderSelected(tag),
-                                        isHelpful: false
-                                    ) {
+                                        isHelpful: false,
+                                        action: {
                                         toggleHinderTagPersist(tag)
-                                    }
+                                        }
+                                    )
                                 }
+                            }
+                        }
+
+                        if session.score < 40 {
+                            Section {
+                                Button("Learn how to improve your heartbeat sensing") {
+                                    openLearnSectionForFlow()
+                                }
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .foregroundStyle(AppColors.breathTeal)
                             }
                         }
 
                         Section {
                             Button {
-                                // Close the results sheet
-                                showAwarenessSessionResultsSheet = false
-                                // Ensure the setup sheet is closed as well
-                                showAwarenessSessionSheet = false
+                                awareness.showResultsSheet = false
+                                awareness.showSessionSheet = false
                             } label: {
-                                Label("Save this session", systemImage: "checkmark.circle")
+                                Label("Done", systemImage: "checkmark.circle")
                                     .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
@@ -474,7 +458,7 @@ struct AwarenessSessionCard: View {
                             Button(role: .destructive) {
                                 showDeleteConfirm = true
                             } label: {
-                                Label("Delete this session", systemImage: "trash")
+                                Label("Discard this session", systemImage: "trash")
                                     .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
@@ -485,7 +469,7 @@ struct AwarenessSessionCard: View {
                         }
                     }
                 }
-                .navigationTitle("Awareness Session Summary")
+                .navigationTitle("Flow Summary")
                 .navigationBarTitleDisplayMode(.inline)
                 .interactiveDismissDisabled(true)
                 .presentationBackground(AppColors.screenBackground)
@@ -494,16 +478,16 @@ struct AwarenessSessionCard: View {
                 .scrollContentBackground(.hidden)
                 .background(AppColors.screenBackground.ignoresSafeArea())
             }
-            .alert("Delete this Awareness Session?", isPresented: $showDeleteConfirm) {
+            .alert("Delete this Flow session?", isPresented: $showDeleteConfirm) {
                 Button("Delete", role: .destructive) {
                     if let session = latestAwarenessSession {
                         modelContext.delete(session)
                         try? modelContext.save()
                         InteroceptiveIndexEngine.recomputeFromSessions(context: modelContext)
-                        showAwarenessSessionResultsSheet = false
-                        showToast("Session deleted")
+                        awareness.showResultsSheet = false
+                        coordinator.showToast("Session deleted")
                     } else {
-                        showToast("Could not find session to delete")
+                        coordinator.showToast("Could not find session to delete")
                     }
                 }
                 Button("Cancel", role: .cancel) { }
@@ -527,6 +511,16 @@ struct AwarenessSessionCard: View {
             return "Close estimate"
         default:
             return "Estimate differed"
+        }
+    }
+
+    private func openLearnSectionForFlow() {
+        awareness.showResultsSheet = false
+        awareness.showSessionSheet = false
+
+        DispatchQueue.main.async {
+            route.selectedTab = 4
+            route.learnLink = .awareness
         }
     }
 }

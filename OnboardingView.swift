@@ -31,18 +31,18 @@ struct OnboardingView: View {
             systemImage: "figure.mind.and.body"
         ),
         OnboardingPage(
-            title: "Find and estimate your heartbeat",
-            subtitle: "Use the Heartbeat Estimate activity to practice noticing and counting your heartbeat instantly, then compare your estimated count with a measured reference from a Bluetooth fitness device you choose to connect.",
+            title: "Sense",
+            subtitle: "Use the Sense activity to practice noticing and counting your heartbeat, then compare your findings with a measured reference from your connected Bluetooth fitness device.",
             systemImage: "heart.text.square"
         ),
         OnboardingPage(
-            title: "Practice heartbeat awareness",
-            subtitle: "Use the Awareness Session activity to recognzie how your heartbeat feels over a period of time, then compare that experience with the measured reference during the session.",
+            title: "Flow",
+            subtitle: "Use the Flow activity to recognize how your heartbeat changes over a period of time, then compare that experience with the measured reference from your connected Bluetooth fitness device during the session.",
             systemImage: "waveform.path.ecg"
         ),
         OnboardingPage(
             title: "Connect your device",
-            subtitle: "InteroHB uses connected sensor data from consumer fitness devices you choose such as a chest strap or fitness watch. If several nearby devices share the same name, make sure you pick your own device.",
+            subtitle: "InteroHB uses connected heart rate data from consumer fitness devices such as a chest strap or fitness watch. When connecting your heart rate device, if several nearby devices share the same name, make sure you pick your own.",
             systemImage: "bolt.heart"
         ),
         OnboardingPage(

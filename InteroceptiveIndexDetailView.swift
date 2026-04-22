@@ -9,6 +9,7 @@ import SwiftUI
 import SwiftData
 
 struct InteroceptiveIndexDetailView: View {
+    @EnvironmentObject private var purchaseManager: PurchaseManager
     @Query private var states: [IndexState]
     @Query(sort: \Session.timestamp, order: .reverse) private var sessions: [Session]
     @Query(sort: \UserProfile.createdAt, order: .forward) private var profiles: [UserProfile]
@@ -20,6 +21,7 @@ struct InteroceptiveIndexDetailView: View {
         case calibration
         case bias
         case consistency
+        case awareness
         case contextCoverage
 
         var id: String {
@@ -27,6 +29,7 @@ struct InteroceptiveIndexDetailView: View {
             case .calibration: return "calibration"
             case .bias: return "bias"
             case .consistency: return "consistency"
+            case .awareness: return "awareness"
             case .contextCoverage: return "contextCoverage"
             }
         }
@@ -34,6 +37,24 @@ struct InteroceptiveIndexDetailView: View {
 
     private var indexState: IndexState? { states.first }
     private var profile: UserProfile? { profiles.first }
+
+    private func senseProgressTitle(completed: Int) -> String {
+        "\(completed) of \(minNonAwarenessSessions) usable Sense sessions completed"
+    }
+
+    private func senseProgressBody(completed: Int, outcome: String) -> String {
+        let remaining = max(0, minNonAwarenessSessions - completed)
+        guard remaining > 0 else { return outcome }
+        return "Complete \(remaining) more to unlock \(outcome.lowercased())."
+    }
+
+    private func indexBuildingWhyText(completed: Int) -> String {
+        let remaining = max(0, minNonAwarenessSessions - completed)
+        if remaining > 0 {
+            return "Complete \(remaining) more to unlock your Interoceptive Index. Each usable Sense session helps build calibration, bias, consistency, and context coverage."
+        }
+        return "Your Interoceptive Index is ready."
+    }
 
     private func statusLabel(for value: Double) -> String {
         switch value {
@@ -124,13 +145,36 @@ struct InteroceptiveIndexDetailView: View {
         return why
     }
 
+    private func awarenessStatusLabel(from score: Double?) -> String {
+        guard let score else { return "Building" }
+        return statusLabel(for: score)
+    }
+
+    private func awarenessWhyText(_ breakdown: InteroceptiveIndexBreakdown) -> String {
+        if let deltaError = breakdown.medianAwarenessAbsDeltaErrorBpm {
+            return "Your recent Flow sessions are averaging about \(Int(deltaError.rounded())) bpm of difference between estimated and measured change."
+        }
+        return "Complete at least 2 usable Flow sessions to fold awareness practice into the index."
+    }
+
+    private func currentAwarenessComponent(indexState: IndexState?, breakdown: InteroceptiveIndexBreakdown) -> Double? {
+        guard breakdown.awarenessScore != nil else { return nil }
+        return indexState?.awarenessComponent ?? breakdown.awarenessScore
+    }
+
     private func contributors(from breakdown: InteroceptiveIndexBreakdown) -> [(String, Double)] {
-        [
+        var values = [
             ("calibration accuracy", breakdown.accuracyScore),
             ("bias balance", breakdown.biasScore),
             ("consistency", breakdown.consistencyScore),
             ("context breadth", breakdown.contextBreadthScore)
         ]
+
+        if let awarenessScore = breakdown.awarenessScore {
+            values.append(("flow awareness", awarenessScore))
+        }
+
+        return values
     }
 
     @ViewBuilder
@@ -147,8 +191,8 @@ struct InteroceptiveIndexDetailView: View {
             IndexComponentInfoView(
                 title: "Calibration",
                 description: "How closely your perceived heartbeat matches your measured heart rate.",
-                statusText: hasEnoughNonAwareness ? statusLabel(for: indexState?.accuracyComponent ?? result.breakdown.accuracyScore) : "-",
-                whyText: hasEnoughNonAwareness ? "Your typical difference is about \(Int(result.breakdown.medianAbsErrorBpm.rounded())) bpm, with consistency around \(Int(result.breakdown.madAbsErrorBpm.rounded())) bpm." : "-",
+                statusText: hasEnoughNonAwareness ? statusLabel(for: indexState?.accuracyComponent ?? result.breakdown.accuracyScore) : "Building",
+                whyText: hasEnoughNonAwareness ? "Your typical difference is about \(Int(result.breakdown.medianAbsErrorBpm.rounded())) bpm, with consistency around \(Int(result.breakdown.madAbsErrorBpm.rounded())) bpm." : indexBuildingWhyText(completed: result.breakdown.usableNonAwarenessCount),
                 suggestions: [
                     "Repeat 3–5 sessions in the same condition before expanding.",
                     "Use a consistent pre-estimate routine, such as a short breathing pause.",
@@ -160,8 +204,8 @@ struct InteroceptiveIndexDetailView: View {
             IndexComponentInfoView(
                 title: "Bias",
                 description: "Whether your estimates tend to run higher or lower than the measured value.",
-                statusText: hasEnoughNonAwareness ? biasLabel(summary.dominantBias) : "-",
-                whyText: hasEnoughNonAwareness ? biasWhyText(result.breakdown.medianBiasBpm) : "-",
+                statusText: hasEnoughNonAwareness ? biasLabel(summary.dominantBias) : "Building",
+                whyText: hasEnoughNonAwareness ? biasWhyText(result.breakdown.medianBiasBpm) : indexBuildingWhyText(completed: result.breakdown.usableNonAwarenessCount),
                 suggestions: suggestionsForBias(summary.dominantBias)
             )
 
@@ -169,8 +213,8 @@ struct InteroceptiveIndexDetailView: View {
             IndexComponentInfoView(
                 title: "Consistency",
                 description: "How stable your calibration is across repeated sessions.",
-                statusText: hasEnoughNonAwareness ? statusLabel(for: indexState?.consistencyComponent ?? result.breakdown.consistencyScore) : "-",
-                whyText: hasEnoughNonAwareness ? "Your consistency is based on the spread of your error pattern over time. Right now, your typical variation is about \(Int(result.breakdown.madAbsErrorBpm.rounded())) bpm around your median error." : "-",
+                statusText: hasEnoughNonAwareness ? statusLabel(for: indexState?.consistencyComponent ?? result.breakdown.consistencyScore) : "Building",
+                whyText: hasEnoughNonAwareness ? "Your consistency is based on the spread of your error pattern over time. Right now, your typical variation is about \(Int(result.breakdown.madAbsErrorBpm.rounded())) bpm around your median error." : indexBuildingWhyText(completed: result.breakdown.usableNonAwarenessCount),
                 suggestions: [
                     "Repeat sessions under the same conditions.",
                     "Use the same pre-estimate routine each time.",
@@ -178,12 +222,25 @@ struct InteroceptiveIndexDetailView: View {
                 ]
             )
 
+        case .awareness:
+            IndexComponentInfoView(
+                title: "Flow Awareness",
+                description: "How closely your Flow heartbeat-change estimates match the measured change over the session.",
+                statusText: awarenessStatusLabel(from: currentAwarenessComponent(indexState: indexState, breakdown: result.breakdown)),
+                whyText: awarenessWhyText(result.breakdown),
+                suggestions: [
+                    "Repeat Flow sessions in a calm, consistent setting first.",
+                    "Estimate the change from beginning to end instead of judging moment to moment.",
+                    "Shorten sessions when attention starts to drift."
+                ]
+            )
+
         case .contextCoverage:
             IndexComponentInfoView(
                 title: "Context Coverage",
                 description: "Whether the index reflects a narrow set of conditions or a broader range of situations.",
-                statusText: hasEnoughNonAwareness ? breadthLabel(from: result.breakdown.contextBreadthScore) : "-",
-                whyText: hasEnoughNonAwareness ? contextCoverageWhyText(result.breakdown) : "-",
+                statusText: hasEnoughNonAwareness ? breadthLabel(from: result.breakdown.contextBreadthScore) : "Building",
+                whyText: hasEnoughNonAwareness ? contextCoverageWhyText(result.breakdown) : indexBuildingWhyText(completed: result.breakdown.usableNonAwarenessCount),
                 suggestions: [
                     "Collect repeated sessions in more contexts.",
                     "Build depth in your current contexts before over-interpreting the overall index.",
@@ -219,7 +276,11 @@ struct InteroceptiveIndexDetailView: View {
                             Text(needsMostWork ?? "—")
                         }
                     } else {
-                        Text("Please do some usable Heartbeat Estimate sessions to generate data for your index.")
+                        VStack(alignment: .center, spacing: 6) {
+                            Text(senseProgressTitle(completed: breakdown.usableNonAwarenessCount))
+                                .font(.headline)
+                            Text(indexBuildingWhyText(completed: breakdown.usableNonAwarenessCount))
+                        }
                             .multilineTextAlignment(.center)
                     }
                 }
@@ -227,86 +288,116 @@ struct InteroceptiveIndexDetailView: View {
                 .foregroundStyle(AppColors.textSecondary)
 
                 List {
-                    Section("Components") {
-                        Button {
-                            activeSheet = .calibration
-                        } label: {
-                            HStack {
-                                Text("Calibration")
-                                Spacer()
-                                HStack(spacing: 6) {
-                                    Circle()
-                                        .fill(hasEnoughNonAwareness ? statusColor(for: indexState.accuracyComponent) : AppColors.textSecondary)
-                                        .frame(width: 10, height: 10)
-                                    Text(hasEnoughNonAwareness ? statusLabel(for: indexState.accuracyComponent) : "-")
-                                        .font(.subheadline)
+                    if purchaseManager.isPremium {
+                        Section("Components") {
+                            Button {
+                                activeSheet = .calibration
+                            } label: {
+                                HStack {
+                                    Text("Calibration")
+                                    Spacer()
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(hasEnoughNonAwareness ? statusColor(for: indexState.accuracyComponent) : AppColors.textSecondary)
+                                            .frame(width: 10, height: 10)
+                                        Text(hasEnoughNonAwareness ? statusLabel(for: indexState.accuracyComponent) : "Building")
+                                            .font(.subheadline)
+                                    }
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundStyle(AppColors.textSecondary)
                                 }
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(AppColors.textSecondary)
                             }
-                        }
-                        .buttonStyle(.plain)
+                            .buttonStyle(.plain)
 
-                        Button {
-                            activeSheet = .bias
-                        } label: {
-                            HStack {
-                                Text("Bias")
-                                Spacer()
-                                HStack(spacing: 6) {
-                                    Circle()
-                                        .fill(hasEnoughNonAwareness ? biasColor(summary.dominantBias) : AppColors.textSecondary)
-                                        .frame(width: 10, height: 10)
-                                    Text(hasEnoughNonAwareness ? biasLabel(summary.dominantBias) : "-")
-                                        .font(.subheadline)
+                            Button {
+                                activeSheet = .bias
+                            } label: {
+                                HStack {
+                                    Text("Bias")
+                                    Spacer()
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(hasEnoughNonAwareness ? biasColor(summary.dominantBias) : AppColors.textSecondary)
+                                            .frame(width: 10, height: 10)
+                                        Text(hasEnoughNonAwareness ? biasLabel(summary.dominantBias) : "Building")
+                                            .font(.subheadline)
+                                    }
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundStyle(AppColors.textSecondary)
                                 }
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(AppColors.textSecondary)
                             }
-                        }
-                        .buttonStyle(.plain)
+                            .buttonStyle(.plain)
 
-                        Button {
-                            activeSheet = .consistency
-                        } label: {
-                            HStack {
-                                Text("Consistency")
-                                Spacer()
-                                HStack(spacing: 6) {
-                                    Circle()
-                                        .fill(hasEnoughNonAwareness ? statusColor(for: indexState.consistencyComponent) : AppColors.textSecondary)
-                                        .frame(width: 10, height: 10)
-                                    Text(hasEnoughNonAwareness ? statusLabel(for: indexState.consistencyComponent) : "-")
-                                        .font(.subheadline)
+                            Button {
+                                activeSheet = .consistency
+                            } label: {
+                                HStack {
+                                    Text("Consistency")
+                                    Spacer()
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(hasEnoughNonAwareness ? statusColor(for: indexState.consistencyComponent) : AppColors.textSecondary)
+                                            .frame(width: 10, height: 10)
+                                        Text(hasEnoughNonAwareness ? statusLabel(for: indexState.consistencyComponent) : "Building")
+                                            .font(.subheadline)
+                                    }
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundStyle(AppColors.textSecondary)
                                 }
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(AppColors.textSecondary)
                             }
-                        }
-                        .buttonStyle(.plain)
+                            .buttonStyle(.plain)
 
-                        Button {
-                            activeSheet = .contextCoverage
-                        } label: {
-                            HStack {
-                                Text("Context Coverage")
-                                Spacer()
-                                HStack(spacing: 6) {
-                                    Circle()
-                                        .fill(hasEnoughNonAwareness ? breadthColor(from: indexState.contextBreadthComponent) : AppColors.textSecondary)
-                                        .frame(width: 10, height: 10)
-                                    Text(hasEnoughNonAwareness ? breadthLabel(from: indexState.contextBreadthComponent) : "-")
-                                        .font(.subheadline)
+                            Button {
+                                activeSheet = .awareness
+                            } label: {
+                                let awarenessDisplayScore = currentAwarenessComponent(indexState: indexState, breakdown: breakdown)
+                                HStack {
+                                    Text("Flow Awareness")
+                                    Spacer()
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(awarenessDisplayScore.map(statusColor(for:)) ?? AppColors.textSecondary)
+                                            .frame(width: 10, height: 10)
+                                        Text(awarenessStatusLabel(from: awarenessDisplayScore))
+                                            .font(.subheadline)
+                                    }
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundStyle(AppColors.textSecondary)
                                 }
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(AppColors.textSecondary)
                             }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                activeSheet = .contextCoverage
+                            } label: {
+                                HStack {
+                                    Text("Context Coverage")
+                                    Spacer()
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(hasEnoughNonAwareness ? breadthColor(from: indexState.contextBreadthComponent) : AppColors.textSecondary)
+                                            .frame(width: 10, height: 10)
+                                        Text(hasEnoughNonAwareness ? breadthLabel(from: indexState.contextBreadthComponent) : "Building")
+                                            .font(.subheadline)
+                                    }
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundStyle(AppColors.textSecondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                    } else {
+                        Section("Components") {
+                            PremiumUpsellView(message: "Interoceptive Index component breakdowns are available to Premium users.")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .listRowBackground(Color.clear)
+                        }
                     }
                 }
                 .background(AppColors.screenBackground.ignoresSafeArea())
@@ -314,8 +405,13 @@ struct InteroceptiveIndexDetailView: View {
                 .toolbarBackground(AppColors.screenBackground, for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
             } else {
-                Text("No Interoceptive Index Data Available")
-                    .foregroundStyle(AppColors.textSecondary)
+                VStack(spacing: 6) {
+                    Text(senseProgressTitle(completed: breakdown.usableNonAwarenessCount))
+                        .font(.headline)
+                    Text(indexBuildingWhyText(completed: breakdown.usableNonAwarenessCount))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(AppColors.textSecondary)
+                }
             }
         }
         .padding()

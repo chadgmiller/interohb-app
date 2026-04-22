@@ -12,6 +12,7 @@ private enum InsightInfoSheet: Identifiable {
     case accuracyTrend
     case bias
     case dataConfidence
+    case senseTags
     case awarenessPractice
     case awarenessTrend
 
@@ -20,6 +21,7 @@ private enum InsightInfoSheet: Identifiable {
         case .accuracyTrend: return "accuracyTrend"
         case .bias: return "bias"
         case .dataConfidence: return "dataConfidence"
+        case .senseTags: return "senseTags"
         case .awarenessPractice: return "awarenessPractice"
         case .awarenessTrend: return "awarenessTrend"
         }
@@ -28,8 +30,6 @@ private enum InsightInfoSheet: Identifiable {
 
 struct InsightsView: View {
     @EnvironmentObject private var purchaseManager: PurchaseManager
-    @State private var showPaywall = false
-    @State private var isPreparingPaywall = false
     
     @Query(sort: \Session.timestamp, order: .reverse)
     private var sessions: [Session]
@@ -47,30 +47,36 @@ struct InsightsView: View {
 
     private var profile: UserProfile? { profiles.first }
 
+    private func progressTitle(completed: Int, required: Int, activityName: String) -> String {
+        "\(completed) of \(required) usable \(activityName) sessions completed"
+    }
+
+    private func progressBody(completed: Int, required: Int, activityName: String, outcome: String) -> String {
+        let remaining = max(0, required - completed)
+        guard remaining > 0 else { return outcome }
+        return "Complete \(remaining) more to unlock \(outcome.lowercased())."
+    }
+
+    private func insightsUnlockView(
+        completed: Int,
+        required: Int,
+        activityName: String,
+        outcome: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(progressTitle(completed: completed, required: required, activityName: activityName))
+                .font(.headline)
+            Text(progressBody(completed: completed, required: required, activityName: activityName, outcome: outcome))
+                .font(.subheadline)
+                .foregroundStyle(AppColors.textSecondary)
+        }
+    }
+
     var body: some View {
         if !purchaseManager.isPremium {
-            VStack(spacing: 16) {
-                Text("Insights are available to Premium users.")
-                    .foregroundStyle(AppColors.textPrimary)
-                
-                Button {
-                    Task { await presentPaywall() }
-                } label: {
-                    paywallButtonLabel(paywallButtonTitle)
-                }
-                .disabled(isPreparingPaywall)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-                .background(AppColors.breathTeal)
-                .foregroundStyle(.white)
-                .clipShape(Capsule())
-            }
+            PremiumUpsellView(message: "Insights are available to Premium users.")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(AppColors.screenBackground.ignoresSafeArea())
-            .sheet(isPresented: $showPaywall) {
-                PremiumPaywallView()
-            }
-
         }
         else {
             let summary = InsightsEngine.summarize(sessions: sessions, profile: profile)
@@ -82,6 +88,7 @@ struct InsightsView: View {
             }
             
             let awarenessSessions = usableSessions.filter { $0.sessionType == .awarenessSession }
+            let senseSessions = usableSessions.filter { $0.sessionType == .heartbeatEstimate }
             
             let nonAwarenessCount = result.breakdown.usableNonAwarenessCount
             let hasEnoughNonAwareness = nonAwarenessCount >= minNonAwarenessSessions
@@ -122,6 +129,62 @@ struct InsightsView: View {
                 let rhsRate = Double(rhs.value.wins) / Double(rhs.value.total)
                 return lhsRate > rhsRate
             }
+
+            let awarenessHinderTagCounts: [String: Int] = {
+                var counts: [String: Int] = [:]
+                for s in awarenessSessions {
+                    for tag in s.awarenessHinderTags ?? [] {
+                        counts[tag, default: 0] += 1
+                    }
+                }
+                return counts
+            }()
+
+            let mostFrequentAwarenessHinderTag = awarenessHinderTagCounts.max { a, b in a.value < b.value }
+
+            let senseHelpfulTagCounts: [String: Int] = {
+                var counts: [String: Int] = [:]
+                for s in senseSessions {
+                    for tag in s.senseTags ?? [] {
+                        counts[tag, default: 0] += 1
+                    }
+                }
+                return counts
+            }()
+
+            let mostFrequentSenseHelpfulTag = senseHelpfulTagCounts.max { a, b in a.value < b.value }
+
+            let senseHelpfulTagStats: [String: (wins: Int, total: Int)] = {
+                var stats: [String: (wins: Int, total: Int)] = [:]
+                for s in senseSessions {
+                    for tag in s.senseTags ?? [] {
+                        var current = stats[tag] ?? (wins: 0, total: 0)
+                        current.total += 1
+                        if isSuccess(s) { current.wins += 1 }
+                        stats[tag] = current
+                    }
+                }
+                return stats
+            }()
+
+            let senseHelpfulTagsWithEnoughData = senseHelpfulTagStats.filter { $0.value.total >= 3 }
+            let sortedSenseHelpfulBySuccessRate = senseHelpfulTagsWithEnoughData.sorted { lhs, rhs in
+                let lhsRate = Double(lhs.value.wins) / Double(lhs.value.total)
+                let rhsRate = Double(rhs.value.wins) / Double(rhs.value.total)
+                return lhsRate > rhsRate
+            }
+
+            let senseHinderTagCounts: [String: Int] = {
+                var counts: [String: Int] = [:]
+                for s in senseSessions {
+                    for tag in s.senseHinderTags ?? [] {
+                        counts[tag, default: 0] += 1
+                    }
+                }
+                return counts
+            }()
+
+            let mostFrequentSenseHinderTag = senseHinderTagCounts.max { a, b in a.value < b.value }
             
             List {
                 if let goal = profile?.primaryGoal {
@@ -141,17 +204,16 @@ struct InsightsView: View {
                     }
                 }
                 
-                Section("Summary") {
+                Section("Your Journey") {
                     if hasEnoughNonAwareness {
-                        SummaryCard(narrative: narrative)
+                        JourneyCard(narrative: narrative)
                     } else {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Not enough data yet")
-                                .font(.headline)
-                            Text("Complete at least \(minNonAwarenessSessions) usable Heartbeat Estimate sessions to unlock personalized insights.")
-                                .font(.subheadline)
-                                .foregroundStyle(AppColors.textSecondary)
-                        }
+                        insightsUnlockView(
+                            completed: nonAwarenessCount,
+                            required: minNonAwarenessSessions,
+                            activityName: "Sense",
+                            outcome: "Your Journey"
+                        )
                     }
                 }
                 
@@ -163,8 +225,12 @@ struct InsightsView: View {
                             activeSheet: $activeSheet
                         )
                     } else {
-                        Text("Key Signals will appear after \(minNonAwarenessSessions) usable Heartbeat Estimate sessions.")
-                            .foregroundStyle(AppColors.textSecondary)
+                        insightsUnlockView(
+                            completed: nonAwarenessCount,
+                            required: minNonAwarenessSessions,
+                            activityName: "Sense",
+                            outcome: "Key Signals"
+                        )
                     }
                 }
                 
@@ -172,8 +238,30 @@ struct InsightsView: View {
                     if hasEnoughNonAwareness {
                         FocusNowSection(narrative: narrative)
                     } else {
-                        Text("Complete a few Heartbeat Estimate sessions to get a personalized focus.")
-                            .foregroundStyle(AppColors.textSecondary)
+                        insightsUnlockView(
+                            completed: nonAwarenessCount,
+                            required: minNonAwarenessSessions,
+                            activityName: "Sense",
+                            outcome: "your personalized focus"
+                        )
+                    }
+                }
+
+                Section("Sense Practice") {
+                    if hasEnoughNonAwareness {
+                        SensePracticeSection(
+                            mostFrequentHelpfulTag: mostFrequentSenseHelpfulTag,
+                            sortedBySuccessRate: sortedSenseHelpfulBySuccessRate,
+                            mostFrequentHinderTag: mostFrequentSenseHinderTag,
+                            activeSheet: $activeSheet
+                        )
+                    } else {
+                        insightsUnlockView(
+                            completed: nonAwarenessCount,
+                            required: minNonAwarenessSessions,
+                            activityName: "Sense",
+                            outcome: "Sense tag insights"
+                        )
                     }
                 }
                 
@@ -184,11 +272,16 @@ struct InsightsView: View {
                             summary: summary,
                             mostFrequentTag: mostFrequentTag,
                             sortedBySuccessRate: sortedBySuccessRate,
+                            mostFrequentHinderTag: mostFrequentAwarenessHinderTag,
                             activeSheet: $activeSheet
                         )
                     } else {
-                        Text("Do at least \(minAwarenessSessions) usable Awareness Session sessions to see awareness-practice insights.")
-                            .foregroundStyle(AppColors.textSecondary)
+                        insightsUnlockView(
+                            completed: result.breakdown.usableAwarenessCount,
+                            required: minAwarenessSessions,
+                            activityName: "Flow",
+                            outcome: "Flow insights"
+                        )
                     }
                 }
                 
@@ -219,7 +312,7 @@ struct InsightsView: View {
         case .accuracyTrend:
             InsightComponentInfoView(
                 title: "Accuracy Trend",
-                description: "Whether your heartbeat estimates are improving, staying steady, or becoming less accurate over time.",
+                description: "Whether your Sense estimates are improving, staying steady, or becoming less accurate over time.",
                 statusText: trendLabel(summary.accuracyTrend),
                 whyText: accuracyTrendWhyText(summary.accuracyTrend, result),
                 suggestions: [
@@ -245,20 +338,29 @@ struct InsightsView: View {
                 statusText: result.dataConfidence.label,
                 whyText: dataConfidenceWhyText(result),
                 suggestions: [
-                    "Collect more completed, usable non-awareness sessions.",
+                    "Collect more completed, usable non-Flow sessions.",
                     "Repeat sessions within your current contexts.",
                     "Add more contexts gradually once your baseline is stable."
                 ]
             )
 
+        case .senseTags:
+            InsightComponentInfoView(
+                title: "Sense Tag Patterns",
+                description: "Which conditions tend to help or hinder your Sense sessions based on the tags you saved.",
+                statusText: senseTagStatusText(sessions: sessions),
+                whyText: senseTagWhyText(sessions: sessions),
+                suggestions: senseTagSuggestions(sessions: sessions)
+            )
+
         case .awarenessPractice:
             InsightComponentInfoView(
                 title: "Awareness",
-                description: "How consistently you notice and compare heartbeat changes during Awareness Sessions.",
+                description: "How consistently you notice and compare heartbeat changes during Flow sessions.",
                 statusText: awarenessPracticeStatusText(from: result),
                 whyText: awarenessPracticeWhyText(result.breakdown),
                 suggestions: [
-                    "Repeat short awareness sessions regularly.",
+                    "Repeat short Flow sessions regularly.",
                     "Use a steady, repeatable setup.",
                     "Keep your posture and timing consistent across sessions."
                 ]
@@ -266,14 +368,14 @@ struct InsightsView: View {
 
         case .awarenessTrend:
             InsightComponentInfoView(
-                title: "Awareness Trend",
-                description: "Whether your Awareness Session performance has been improving, staying stable, or worsening over time.",
+                title: "Flow Trend",
+                description: "Whether your Flow performance has been improving, staying stable, or worsening over time.",
                 statusText: awarenessTrendStatusText(summary.awarenessTrend),
                 whyText: awarenessTrendWhyText(summary.awarenessTrend),
                 suggestions: [
-                    "Keep your awareness routine consistent across sessions.",
+                    "Keep your Flow routine consistent across sessions.",
                     "Use the same posture and pacing across sessions.",
-                    "Repeat enough awareness sessions to build a reliable trend."
+                    "Repeat enough Flow sessions to build a reliable trend."
                 ]
             )
         }
@@ -369,7 +471,7 @@ struct InsightsView: View {
     private func dataConfidenceWhyText(_ result: InteroceptiveIndexResult) -> String {
         switch result.dataConfidence {
         case .building:
-            return "This is still an early signal. A few more repeated usable non-awareness sessions will make the interpretation more reliable."
+            return "This is still an early signal. A few more repeated usable non-Flow sessions will make the interpretation more reliable."
         case .moderate:
             return "The signal is building, but confidence will improve as you add repeated sessions in more contexts."
         case .high:
@@ -379,23 +481,128 @@ struct InsightsView: View {
 
     private func awarenessPracticeWhyText(_ breakdown: InteroceptiveIndexBreakdown) -> String {
         if let deltaError = breakdown.medianAwarenessAbsDeltaErrorBpm {
-            return "Your awareness sessions are averaging about \(String(format: "%.1f", deltaError)) bpm of difference between estimated change and measured change."
+            return "Your Flow sessions are averaging about \(String(format: "%.1f", deltaError)) bpm of difference between estimated change and measured change."
         } else {
-            return "This is based on your recent awareness sessions and will become clearer as you collect more of them."
+            return "This is based on your recent Flow sessions and will become clearer as you collect more of them."
         }
     }
 
     private func awarenessTrendWhyText(_ trend: TrendDirection?) -> String {
         guard let trend else {
-            return "There are not enough recent awareness sessions yet to identify a clear trend."
+            return "There are not enough recent Flow sessions yet to identify a clear trend."
         }
         switch trend {
         case .improving:
-            return "Your recent awareness sessions are producing closer heartbeat-change estimates than earlier ones."
+            return "Your recent Flow sessions are producing closer heartbeat-change estimates than earlier ones."
         case .stable:
             return "Your recent awareness performance has stayed fairly steady over time."
         case .worsening:
-            return "Your recent awareness sessions are producing less accurate heartbeat-change estimates than earlier ones."
+            return "Your recent Flow sessions are producing less accurate heartbeat-change estimates than earlier ones."
+        }
+    }
+
+    private func senseTagStatusText(sessions: [Session]) -> String {
+        let usableSense = sessions.filter {
+            $0.sessionType == .heartbeatEstimate &&
+            $0.completionStatus == .completed &&
+            $0.qualityFlag != .invalid
+        }
+        let taggedCount = usableSense.filter { !($0.senseTags ?? []).isEmpty || !($0.senseHinderTags ?? []).isEmpty }.count
+
+        switch taggedCount {
+        case 6...:
+            return "Building patterns"
+        case 3..<6:
+            return "Early patterns"
+        default:
+            return "Add more tags"
+        }
+    }
+
+    private func senseTagWhyText(sessions: [Session]) -> String {
+        let usableSense = sessions.filter {
+            $0.sessionType == .heartbeatEstimate &&
+            $0.completionStatus == .completed &&
+            $0.qualityFlag != .invalid
+        }
+
+        var helpfulCounts: [String: Int] = [:]
+        var hinderCounts: [String: Int] = [:]
+        var helpfulStats: [String: (wins: Int, total: Int)] = [:]
+
+        for session in usableSense {
+            for tag in session.senseTags ?? [] {
+                helpfulCounts[tag, default: 0] += 1
+                var current = helpfulStats[tag] ?? (wins: 0, total: 0)
+                current.total += 1
+                if session.error <= 3 {
+                    current.wins += 1
+                }
+                helpfulStats[tag] = current
+            }
+
+            for tag in session.senseHinderTags ?? [] {
+                hinderCounts[tag, default: 0] += 1
+            }
+        }
+
+        let topHelpful = helpfulCounts.max { $0.value < $1.value }
+        let topHinder = hinderCounts.max { $0.value < $1.value }
+        let bestHelpful = helpfulStats
+            .filter { $0.value.total >= 3 }
+            .max { lhs, rhs in
+                let lhsRate = Double(lhs.value.wins) / Double(lhs.value.total)
+                let rhsRate = Double(rhs.value.wins) / Double(rhs.value.total)
+                return lhsRate < rhsRate
+            }
+
+        if let bestHelpful {
+            let rate = Int((Double(bestHelpful.value.wins) / Double(bestHelpful.value.total) * 100).rounded())
+            return "\"\(bestHelpful.key)\" is currently your strongest helpful Sense tag at about \(rate)% close-estimate sessions. Most common hinder tag: \(topHinder?.key ?? "none yet")."
+        }
+
+        if let topHelpful {
+            return "\"\(topHelpful.key)\" is your most frequently used helpful Sense tag so far. Most common hinder tag: \(topHinder?.key ?? "none yet")."
+        }
+
+        return "Save helpful and hinder tags after Sense sessions to learn which conditions support better estimates."
+    }
+
+    private func senseTagSuggestions(sessions: [Session]) -> [String] {
+        let hinderCounts = sessions
+            .filter { $0.sessionType == .heartbeatEstimate }
+            .flatMap { $0.senseHinderTags ?? [] }
+            .reduce(into: [String: Int]()) { counts, tag in
+                counts[tag, default: 0] += 1
+            }
+
+        let topHinder = hinderCounts.max { $0.value < $1.value }?.key
+
+        switch topHinder {
+        case "External Noise":
+            return [
+                "Choose a quieter space before starting Sense.",
+                "Reduce audio distractions for your first few repetitions.",
+                "Repeat sessions in the same quiet setup to compare more cleanly."
+            ]
+        case "Too rushed":
+            return [
+                "Pause for one or two breaths before estimating.",
+                "Avoid starting Sense when you need to answer quickly.",
+                "Use the calculated method when you want a steadier routine."
+            ]
+        case "Couldn't focus":
+            return [
+                "Shorten the setup and simplify the routine before estimating.",
+                "Repeat sessions in the same posture for a few rounds.",
+                "Use tags consistently so you can spot what improves focus."
+            ]
+        default:
+            return [
+                "Tag each Sense session right after it ends while the conditions are still fresh.",
+                "Repeat the tags that seem to help and compare their close-estimate rates over time.",
+                "Reduce the most common hinder tag before expanding to harder contexts."
+            ]
         }
     }
 
@@ -421,28 +628,6 @@ struct InsightsView: View {
         }
     }
 
-    private func presentPaywall() async {
-        guard !isPreparingPaywall else { return }
-
-        isPreparingPaywall = true
-        _ = await purchaseManager.ensureProductsLoaded()
-        isPreparingPaywall = false
-        showPaywall = true
-    }
-
-    @ViewBuilder
-    private func paywallButtonLabel(_ title: String) -> some View {
-        if isPreparingPaywall {
-            ProgressView()
-                .tint(.white)
-        } else {
-            Text(title)
-        }
-    }
-
-    private var paywallButtonTitle: String {
-        purchaseManager.isEligibleForIntroOffer ? "Start Free Trial" : "Upgrade Now"
-    }
 }
 
 private struct InsightsIndexSection: View {
@@ -607,6 +792,7 @@ private struct AwarenessPracticeSection: View {
     let summary: InsightSummary
     let mostFrequentTag: (key: String, value: Int)?
     let sortedBySuccessRate: [(key: String, value: (wins: Int, total: Int))]
+    let mostFrequentHinderTag: (key: String, value: Int)?
     @Binding var activeSheet: InsightInfoSheet?
 
     var body: some View {
@@ -614,7 +800,7 @@ private struct AwarenessPracticeSection: View {
             activeSheet = .awarenessPractice
         } label: {
             HStack {
-                Text("Heartbeat Awareness")
+                Text("Flow")
                 Spacer()
                 RatingBadge(color: awarenessPracticeColor, text: awarenessPracticeText)
                 Image(systemName: "chevron.right")
@@ -663,6 +849,15 @@ private struct AwarenessPracticeSection: View {
                     }
                 }
             }
+
+            if let personalizedTip {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Personalized Tip")
+                        .font(.headline)
+                    Text(personalizedTip)
+                        .foregroundStyle(AppColors.textSecondary)
+                }
+            }
         } else {
             Text("Not enough data yet to compare close-estimate rates by tag.")
                 .foregroundStyle(AppColors.textSecondary)
@@ -706,6 +901,77 @@ private struct AwarenessPracticeSection: View {
         case .worsening: return AppColors.warning
         }
     }
+
+    private var personalizedTip: String? {
+        guard let strongestHelpful = sortedBySuccessRate.first else { return nil }
+        let rate = Int((Double(strongestHelpful.value.wins) / Double(strongestHelpful.value.total) * 100).rounded())
+
+        if let hinder = mostFrequentHinderTag?.key, !(hinder.isEmpty) {
+            return "Tip: \(strongestHelpful.key) has helped your Flow sessions \(rate)% of the time. Try it when \(hinder.lowercased()) gets in the way."
+        }
+
+        return "Tip: \(strongestHelpful.key) has helped your Flow sessions \(rate)% of the time. Try making it part of your next few sessions."
+    }
+}
+
+private struct SensePracticeSection: View {
+    let mostFrequentHelpfulTag: (key: String, value: Int)?
+    let sortedBySuccessRate: [(key: String, value: (wins: Int, total: Int))]
+    let mostFrequentHinderTag: (key: String, value: Int)?
+    @Binding var activeSheet: InsightInfoSheet?
+
+    var body: some View {
+        Button {
+            activeSheet = .senseTags
+        } label: {
+            HStack {
+                Text("Sense Tag Patterns")
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(AppColors.textSecondary)
+            }
+        }
+        .buttonStyle(.plain)
+
+        if let mostFrequentHelpfulTag, mostFrequentHelpfulTag.value > 0 {
+            HStack {
+                Text("Most Frequent Helpful Tag")
+                Spacer()
+                Text("\(mostFrequentHelpfulTag.key) (\(mostFrequentHelpfulTag.value)x)")
+            }
+        } else {
+            Text("No helpful Sense tags recorded yet.")
+                .foregroundStyle(AppColors.textSecondary)
+        }
+
+        if let mostFrequentHinderTag, mostFrequentHinderTag.value > 0 {
+            HStack {
+                Text("Most Frequent Hinder Tag")
+                Spacer()
+                Text("\(mostFrequentHinderTag.key) (\(mostFrequentHinderTag.value)x)")
+            }
+        }
+
+        if !sortedBySuccessRate.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Top Helpful Patterns")
+                    .font(.headline)
+
+                ForEach(Array(sortedBySuccessRate.prefix(3)), id: \.key) { item in
+                    let rate = Double(item.value.wins) / Double(item.value.total)
+                    HStack {
+                        Text(item.key)
+                        Spacer()
+                        Text("\(Int((rate * 100).rounded()))% (\(item.value.wins)/\(item.value.total))")
+                    }
+                }
+            }
+        } else {
+            Text("Not enough tagged Sense sessions yet to compare which tags support close estimates.")
+                .foregroundStyle(AppColors.textSecondary)
+        }
+    }
 }
 
 private struct RatingBadge: View {
@@ -724,20 +990,17 @@ private struct RatingBadge: View {
     }
 }
 
-struct SummaryCard: View {
+struct JourneyCard: View {
     let narrative: InsightNarrative
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(narrative.headline)
+            Text(narrative.journeyLine)
                 .font(.headline)
-                .bold()
 
-            ForEach(Array(narrative.summaryLines.prefix(2)), id: \.self) { line in
-                Text(line)
-                    .font(.subheadline)
-                    .foregroundStyle(AppColors.textSecondary)
-            }
+            Text(narrative.headline)
+                .font(.subheadline)
+                .foregroundStyle(AppColors.textSecondary)
 
             if let note = narrative.confidenceNote, !note.isEmpty {
                 Text(note)

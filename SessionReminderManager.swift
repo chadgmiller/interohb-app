@@ -34,6 +34,7 @@ final class SessionReminderManager {
         reminderHour: Int,
         reminderMinute: Int,
         hasCompletedSessionToday: Bool,
+        reminderBody: String,
         now: Date = Date()
     ) async {
         cancelReminder()
@@ -52,30 +53,27 @@ final class SessionReminderManager {
 
         guard let todayReminder = calendar.date(from: components) else { return }
 
-        let fireDate: Date
-
-        if hasCompletedSessionToday {
-            fireDate = calendar.date(byAdding: .day, value: 1, to: todayReminder) ?? todayReminder
-        } else {
-            if todayReminder > now {
-                fireDate = todayReminder
-            } else {
-                fireDate = calendar.date(byAdding: .day, value: 1, to: todayReminder) ?? todayReminder
-            }
-        }
-
-        let fireComponents = calendar.dateComponents(
-            [.year, .month, .day, .hour, .minute, .second],
-            from: fireDate
-        )
-
         let content = UNMutableNotificationContent()
         content.title = "InteroHB"
-        content.body = "Take a moment to do a Heartbeat Estimate or Awareness Session."
+        content.body = reminderBody
         content.sound = .default
         content.userInfo = ["destination": "home"]
 
-        let trigger = UNCalendarNotificationTrigger(dateMatching: fireComponents, repeats: false)
+        var fireComponents = DateComponents()
+        fireComponents.hour = reminderHour
+        fireComponents.minute = reminderMinute
+        fireComponents.second = 0
+
+        let shouldStartTomorrow = hasCompletedSessionToday || todayReminder <= now
+        if shouldStartTomorrow {
+            let startDate = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+            let startDayComponents = calendar.dateComponents([.year, .month, .day], from: startDate)
+            fireComponents.year = startDayComponents.year
+            fireComponents.month = startDayComponents.month
+            fireComponents.day = startDayComponents.day
+        }
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: fireComponents, repeats: true)
         let request = UNNotificationRequest(
             identifier: reminderID,
             content: content,

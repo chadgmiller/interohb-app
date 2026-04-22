@@ -230,7 +230,7 @@ enum TrendDebugSeeder {
         let score = clampInt(92 - abs(signedDeltaError * 8) + Int(progress * 10), lower: 38, upper: 98)
 
         let session = Session(
-            context: "Awareness Session",
+            context: "Flow",
             estimate: estimatedDelta,
             actualHR: measuredDelta,
             error: abs(signedDeltaError),

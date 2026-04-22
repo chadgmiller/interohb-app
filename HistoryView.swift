@@ -10,9 +10,8 @@ import SwiftData
 import Charts
 
 struct HistoryView: View {
+    @EnvironmentObject private var route: AppRoute
     @EnvironmentObject private var purchaseManager: PurchaseManager
-    @State private var showPaywall = false
-    @State private var isPreparingPaywall = false
 
     @Query(sort: \Session.timestamp, order: .reverse)
     private var sessions: [Session]
@@ -22,8 +21,8 @@ struct HistoryView: View {
 
     private enum SessionFilter: String, CaseIterable, Identifiable {
         case all = "All"
-        case awareness = "Awareness Session"
-        case pulse = "Heartbeat Estimate"
+        case awareness = "Flow"
+        case pulse = "Sense"
         var id: String { rawValue }
     }
 
@@ -52,8 +51,23 @@ struct HistoryView: View {
         return filteredSessions.contains { $0.timestamp < premiumHistoryCutoff }
     }
 
-    private func removeSessions(at offsets: IndexSet) {
-        let toDelete = offsets.map { viewableSessions[$0] }
+    private var sessionSections: [SessionDaySection] {
+        let grouped = Dictionary(grouping: viewableSessions) { session in
+            Calendar.current.startOfDay(for: session.timestamp)
+        }
+
+        return grouped.keys
+            .sorted(by: >)
+            .map { day in
+                SessionDaySection(
+                    day: day,
+                    sessions: grouped[day, default: []].sorted { $0.timestamp > $1.timestamp }
+                )
+            }
+    }
+
+    private func removeSessions(at offsets: IndexSet, in section: SessionDaySection) {
+        let toDelete = offsets.map { section.sessions[$0] }
         for s in toDelete {
             modelContext.delete(s)
         }
@@ -62,66 +76,72 @@ struct HistoryView: View {
     }
 
     var body: some View {
-        List {
-            ForEach(viewableSessions) { session in
-                NavigationLink {
-                    if session.sessionType == .awarenessSession {
-                        AwarenessSessionDetailView(session: session)
-                    } else {
-                        PulseSessionDetailView(session: session)
+        Group {
+            if sessions.isEmpty {
+                ContentUnavailableView {
+                    Label("No Sessions Yet", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                } description: {
+                    Text("Complete your first Sense or Flow session to see it here.")
+                } actions: {
+                    Button("Go to Home") {
+                        route.selectedTab = 0
                     }
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(session.sessionType == .awarenessSession ? "Awareness Session" : "Heartbeat Estimate")
-                            .font(.headline)
-
-                        Text(contextDisplay(for: session))
-                            .font(.subheadline)
-                            .foregroundStyle(AppColors.textSecondary)
-
-                        if let detectionLabel = session.heartbeatDetectionMethodLabel {
-                            Text(detectionLabel)
-                                .font(.caption)
-                                .foregroundStyle(AppColors.textSecondary)
-                        }
-
-                        HStack(spacing: 12) {
-                            Text("Training Score: \(session.score)")
-                                .font(.subheadline)
-                        }
-
-                        Text(session.timestamp.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption)
-                            .foregroundColor(AppColors.textSecondary)
-                    }
-                    .padding(.vertical, 4)
+                    .buttonStyle(.borderedProminent)
+                    .tint(AppColors.breathTeal)
                 }
-            }
-            .onDelete(perform: removeSessions)
+            } else {
+                List {
+                    ForEach(sessionSections) { section in
+                        Section(section.title) {
+                            ForEach(section.sessions) { session in
+                                NavigationLink {
+                                    if session.sessionType == .awarenessSession {
+                                        AwarenessSessionDetailView(session: session)
+                                    } else {
+                                        PulseSessionDetailView(session: session)
+                                    }
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(session.sessionType == .awarenessSession ? "Flow" : "Sense")
+                                            .font(.headline)
 
-            if hasLockedHistory {
-                Section {
-                    VStack(spacing: 14) {
-                        Text("Upgrade to Premium to view all of your past sessions.")
-                            .font(.subheadline)
-                            .foregroundStyle(AppColors.textSecondary)
-                            .multilineTextAlignment(.center)
+                                        Text(contextDisplay(for: session))
+                                            .font(.subheadline)
+                                            .foregroundStyle(AppColors.textSecondary)
 
-                        Button {
-                            Task { await presentPaywall() }
-                        } label: {
-                            paywallButtonLabel(paywallButtonTitle)
+                                        if let detectionLabel = session.heartbeatDetectionMethodLabel {
+                                            Text(detectionLabel)
+                                                .font(.caption)
+                                                .foregroundStyle(AppColors.textSecondary)
+                                        }
+
+                                        HStack(spacing: 12) {
+                                            Text("Training Score: \(session.score)")
+                                                .font(.subheadline)
+                                        }
+
+                                        Text(session.timestamp.formatted(date: .omitted, time: .shortened))
+                                            .font(.caption)
+                                            .foregroundColor(AppColors.textSecondary)
+                                    }
+                                    .padding(.vertical, 4)
+                                }
+                            }
+                            .onDelete { offsets in
+                                removeSessions(at: offsets, in: section)
+                            }
                         }
-                        .disabled(isPreparingPaywall)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 12)
-                        .background(AppColors.breathTeal)
-                        .foregroundStyle(.white)
-                        .clipShape(Capsule())
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .listRowBackground(Color.clear)
+
+                    if hasLockedHistory {
+                        Section {
+                            PremiumUpsellView(message: "Upgrade to Premium to view all of your past sessions.")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .listRowBackground(Color.clear)
+                        }
+                    } else {
+                    }
                 }
             }
         }
@@ -146,32 +166,6 @@ struct HistoryView: View {
                 .accessibilityLabel("Filter sessions")
             }
         }
-        .sheet(isPresented: $showPaywall) {
-            PremiumPaywallView()
-        }
-    }
-
-    private func presentPaywall() async {
-        guard !isPreparingPaywall else { return }
-
-        isPreparingPaywall = true
-        _ = await purchaseManager.ensureProductsLoaded()
-        isPreparingPaywall = false
-        showPaywall = true
-    }
-
-    @ViewBuilder
-    private func paywallButtonLabel(_ title: String) -> some View {
-        if isPreparingPaywall {
-            ProgressView()
-                .tint(.white)
-        } else {
-            Text(title)
-        }
-    }
-
-    private var paywallButtonTitle: String {
-        purchaseManager.isEligibleForIntroOffer ? "Start Free Trial" : "Upgrade Now"
     }
 
     private func contextDisplay(for session: Session) -> String {
@@ -179,11 +173,37 @@ struct HistoryView: View {
     }
 }
 
+private struct SessionDaySection: Identifiable {
+    let day: Date
+    let sessions: [Session]
+
+    var id: Date { day }
+
+    var title: String {
+        if Calendar.current.isDateInToday(day) {
+            return "Today"
+        }
+
+        if Calendar.current.isDateInYesterday(day) {
+            return "Yesterday"
+        }
+
+        return Self.sectionDateFormatter.string(from: day)
+    }
+
+    private static let sectionDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM d"
+        return formatter
+    }()
+}
+
 private struct PulseSessionDetailView: View {
     let session: Session
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var showDeleteConfirm = false
+    @State private var showTechnicalDetails = false
 
     private func signedText(_ value: Int) -> String {
         value > 0 ? "+\(value)" : "\(value)"
@@ -313,39 +333,59 @@ private struct PulseSessionDetailView: View {
                 }
             }
 
-            Section("Session Quality") {
-                HStack {
-                    Text("Completion")
-                        .font(.headline)
-                    Spacer()
-                    Text(session.completionStatus.rawValue.capitalized)
-                        .foregroundStyle(AppColors.textSecondary)
-                }
-
-                HStack {
-                    Text("Quality")
-                        .font(.headline)
-                    Spacer()
-                    Text(qualityText)
-                        .foregroundStyle(AppColors.textSecondary)
-                }
-
-                HStack {
-                    Text("Signal Confidence")
-                        .font(.headline)
-                    Spacer()
-                    Text(confidenceText)
-                        .foregroundStyle(AppColors.textSecondary)
-                }
-
-                if let device = session.deviceName, !device.isEmpty {
+            Section {
+                DisclosureGroup("Show Details", isExpanded: $showTechnicalDetails) {
                     HStack {
-                        Text("Device")
+                        Text("Completion")
                             .font(.headline)
                         Spacer()
-                        Text(device)
+                        Text(session.completionStatus.rawValue.capitalized)
                             .foregroundStyle(AppColors.textSecondary)
                     }
+
+                    HStack {
+                        Text("Quality")
+                            .font(.headline)
+                        Spacer()
+                        Text(qualityText)
+                            .foregroundStyle(AppColors.textSecondary)
+                    }
+
+                    HStack {
+                        Text("Signal Confidence")
+                            .font(.headline)
+                        Spacer()
+                        Text(confidenceText)
+                            .foregroundStyle(AppColors.textSecondary)
+                    }
+
+                    if let device = session.deviceName, !device.isEmpty {
+                        HStack {
+                            Text("Device")
+                                .font(.headline)
+                            Spacer()
+                            Text(device)
+                                .foregroundStyle(AppColors.textSecondary)
+                        }
+                    }
+                }
+            }
+
+            Section("What helped most?") {
+                if let tags = session.senseTags, !tags.isEmpty {
+                    SessionTagFlowLayout(tags: tags, helpful: true)
+                } else {
+                    Text("-")
+                        .foregroundStyle(AppColors.textSecondary)
+                }
+            }
+
+            Section("What got in the way?") {
+                if let tags = session.senseHinderTags, !tags.isEmpty {
+                    SessionTagFlowLayout(tags: tags, helpful: false)
+                } else {
+                    Text("-")
+                        .foregroundStyle(AppColors.textSecondary)
                 }
             }
 
@@ -358,13 +398,13 @@ private struct PulseSessionDetailView: View {
                 }
             }
         }
-        .navigationTitle("Heartbeat Estimate Details")
+        .navigationTitle("Sense Details")
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
         .background(AppColors.screenBackground.ignoresSafeArea())
         .toolbarBackground(AppColors.screenBackground, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
-        .alert("Delete this Heartbeat Estimate Session?", isPresented: $showDeleteConfirm) {
+        .alert("Delete this Sense session?", isPresented: $showDeleteConfirm) {
             Button("Delete", role: .destructive) {
                 modelContext.delete(session)
                 try? modelContext.save()

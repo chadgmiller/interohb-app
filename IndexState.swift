@@ -40,7 +40,7 @@ final class IndexState {
         contextBreadthComponent: Double = 0.0,
         emaAlpha: Double = 0.2,
         dataConfidenceRaw: String = DataConfidence.building.rawValue,
-        scoringModelVersion: String = "2.0",
+        scoringModelVersion: String = "3.0",
         lastUpdated: Date = Date(),
         windowStart: Date? = nil,
         windowEnd: Date? = nil

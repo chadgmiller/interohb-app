@@ -5,7 +5,7 @@
       {
         "locale" : "en_US",
         "policyText" : "",
-        "policyURL" : "https://interohr.com/privacy.html"
+        "policyURL" : "https://interohb.com/privacy.html"
       }
     ]
   },
@@ -72,7 +72,7 @@
               "locale" : "en_US"
             }
           ],
-          "productID" : "interohb.premium.yearly",
+          "productID" : "interohr.premium.yearly",
           "recurringSubscriptionPeriod" : "P1Y",
           "referenceName" : "InteroHB Premium",
           "subscriptionGroupID" : "271DC379",

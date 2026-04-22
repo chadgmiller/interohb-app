@@ -8,7 +8,6 @@
 import Foundation
 
 struct ScoreCalculator {
-
     nonisolated static func clamp(_ x: Double, min: Double = 0, max: Double = 100) -> Double {
         Swift.max(min, Swift.min(max, x))
     }
@@ -24,12 +23,15 @@ struct ScoreCalculator {
         return sqrt(variance)
     }
 
-    nonisolated static func heartbeatEstimateScore(error: Int) -> Int {
-        max(0, 100 - 5 * abs(error))
+    nonisolated static func heartbeatEstimateScore(error: Int, isBeginnerMode: Bool) -> Int {
+        exponentialScore(
+            error: error,
+            decayBpm: isBeginnerMode ? 24 : 18
+        )
     }
 
     nonisolated static func awarenessEstimateScore(error: Int) -> Int {
-        max(0, 100 - 5 * abs(error))
+        exponentialScore(error: error, decayBpm: 16)
     }
 
     nonisolated static func detectionMethodMultiplier(_ detectionMethod: Session.HeartbeatDetectionMethod?) -> Double {
@@ -77,5 +79,11 @@ struct ScoreCalculator {
         let perf = Int((0.75 * accuracyScore + 0.25 * consistencyScore).rounded())
 
         return (perf, Int(accuracyScore.rounded()), Int(consistencyScore.rounded()))
+    }
+
+    private nonisolated static func exponentialScore(error: Int, decayBpm: Double) -> Int {
+        let magnitude = Double(abs(error))
+        let score = 100.0 * Foundation.exp(-magnitude / decayBpm)
+        return Int(clamp(score).rounded())
     }
 }

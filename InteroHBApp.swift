@@ -10,6 +10,7 @@ import SwiftData
 
 @main
 struct InteroHBApp: App {
+    @UIApplicationDelegateAdaptor(InteroHBAppDelegate.self) private var appDelegate
     @StateObject private var route = AppRoute()
     @State private var showSplash = true
     @StateObject private var purchaseManager = PurchaseManager()
@@ -81,6 +82,7 @@ struct InteroHBApp: App {
             .task {
                 await purchaseManager.start()
                 purchaseManager.startEntitlementRefreshLoop()
+                _ = HeartBeatManager.shared
             }
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {

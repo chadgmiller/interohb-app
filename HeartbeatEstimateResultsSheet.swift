@@ -14,7 +14,9 @@ struct HeartbeatEstimateResultsSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var route: AppRoute
     @State private var showDeleteConfirm: Bool = false
+    @State private var showTechnicalDetails = false
 
     private func signedText(_ value: Int) -> String {
         value > 0 ? "+\(value)" : "\(value)"
@@ -29,7 +31,7 @@ struct HeartbeatEstimateResultsSheet: View {
 
     private var methodText: String? {
         guard let method = session.heartbeatEstimationMethod else { return nil }
-        return method == .timed ? "Timed" : "Observed"
+        return method == .timed ? "Calculated" : "Observed"
     }
 
     private var qualityText: String {
@@ -47,6 +49,53 @@ struct HeartbeatEstimateResultsSheet: View {
         case .medium: return "Medium"
         case .low: return "Low"
         case .unknown: return "Unknown"
+        }
+    }
+
+    private func helpfulSelected(_ tag: String) -> Bool {
+        Set(session.senseTags ?? []).contains(tag)
+    }
+
+    private func hinderSelected(_ tag: String) -> Bool {
+        Set(session.senseHinderTags ?? []).contains(tag)
+    }
+
+    private func toggleHelpfulTagPersist(_ tag: String) {
+        var set = Set(session.senseTags ?? [])
+        if set.contains(tag) {
+            set.remove(tag)
+        } else {
+            set.insert(tag)
+        }
+        session.senseTags = set.isEmpty ? nil : Array(set).sorted()
+        try? modelContext.save()
+    }
+
+    private func toggleHinderTagPersist(_ tag: String) {
+        var set = Set(session.senseHinderTags ?? [])
+        if set.contains(tag) {
+            set.remove(tag)
+        } else {
+            set.insert(tag)
+        }
+        session.senseHinderTags = set.isEmpty ? nil : Array(set).sorted()
+        try? modelContext.save()
+    }
+
+    private var shouldShowLearnCTA: Bool {
+        session.score < 40
+    }
+
+    private func openLearnSection() {
+        if let onDismiss {
+            onDismiss()
+        } else {
+            dismiss()
+        }
+
+        DispatchQueue.main.async {
+            route.selectedTab = 4
+            route.learnLink = .estimatingHB
         }
     }
 
@@ -72,8 +121,6 @@ struct HeartbeatEstimateResultsSheet: View {
 
                     if let detectionLabel = session.heartbeatDetectionMethodLabel {
                         HStack {
-                            Text("Heartbeat Sensing")
-                                .font(.headline)
                             Spacer()
                             Text(detectionLabel)
                                 .foregroundStyle(AppColors.textSecondary)
@@ -157,39 +204,81 @@ struct HeartbeatEstimateResultsSheet: View {
                     }
                 }
 
-                Section("Session Quality") {
-                    HStack {
-                        Text("Completion")
-                            .font(.headline)
-                        Spacer()
-                        Text(session.completionStatus.rawValue.capitalized)
-                            .foregroundStyle(AppColors.textSecondary)
-                    }
-
-                    HStack {
-                        Text("Quality")
-                            .font(.headline)
-                        Spacer()
-                        Text(qualityText)
-                            .foregroundStyle(AppColors.textSecondary)
-                    }
-
-                    HStack {
-                        Text("Signal Confidence")
-                            .font(.headline)
-                        Spacer()
-                        Text(confidenceText)
-                            .foregroundStyle(AppColors.textSecondary)
-                    }
-                    
-                    if let deviceName = session.deviceName, !deviceName.isEmpty {
+                Section {
+                    DisclosureGroup("Show Details", isExpanded: $showTechnicalDetails) {
                         HStack {
-                            Text("Device")
+                            Text("Completion")
                                 .font(.headline)
                             Spacer()
-                            Text(deviceName)
+                            Text(session.completionStatus.rawValue.capitalized)
                                 .foregroundStyle(AppColors.textSecondary)
                         }
+
+                        HStack {
+                            Text("Quality")
+                                .font(.headline)
+                            Spacer()
+                            Text(qualityText)
+                                .foregroundStyle(AppColors.textSecondary)
+                        }
+
+                        HStack {
+                            Text("Signal Confidence")
+                                .font(.headline)
+                            Spacer()
+                            Text(confidenceText)
+                                .foregroundStyle(AppColors.textSecondary)
+                        }
+
+                        if let deviceName = session.deviceName, !deviceName.isEmpty {
+                            HStack {
+                                Text("Device")
+                                    .font(.headline)
+                                Spacer()
+                                Text(deviceName)
+                                    .foregroundStyle(AppColors.textSecondary)
+                            }
+                        }
+                    }
+                }
+
+                Section("What helped most?") {
+                    VStack(spacing: 0) {
+                        ForEach(SessionReflectionTags.helpful, id: \.self) { tag in
+                            SelectableSessionTagRow(
+                                text: tag,
+                                isSelected: helpfulSelected(tag),
+                                isHelpful: true,
+                                action: {
+                                    toggleHelpfulTagPersist(tag)
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Section("What got in the way?") {
+                    VStack(spacing: 0) {
+                        ForEach(SessionReflectionTags.hinder, id: \.self) { tag in
+                            SelectableSessionTagRow(
+                                text: tag,
+                                isSelected: hinderSelected(tag),
+                                isHelpful: false,
+                                action: {
+                                    toggleHinderTagPersist(tag)
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if shouldShowLearnCTA {
+                    Section {
+                        Button("Learn how to improve your heartbeat sensing") {
+                            openLearnSection()
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .foregroundStyle(AppColors.breathTeal)
                     }
                 }
 
@@ -201,7 +290,7 @@ struct HeartbeatEstimateResultsSheet: View {
                             dismiss()
                         }
                     } label: {
-                        Label("Save this session", systemImage: "checkmark.circle")
+                        Label("Done", systemImage: "checkmark.circle")
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
@@ -210,19 +299,19 @@ struct HeartbeatEstimateResultsSheet: View {
                     Button(role: .destructive) {
                         showDeleteConfirm = true
                     } label: {
-                        Label("Delete this session", systemImage: "trash")
+                        Label("Discard Session", systemImage: "trash")
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
             }
-            .navigationTitle("Heartbeat Estimate Results")
+            .navigationTitle("Sense Results")
             .navigationBarTitleDisplayMode(.inline)
             .background(AppColors.screenBackground.ignoresSafeArea())
             .toolbarBackground(AppColors.screenBackground, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .interactiveDismissDisabled(true)
-            .alert("Delete this Heartbeat Estimate Session?", isPresented: $showDeleteConfirm) {
-                Button("Delete", role: .destructive) {
+            .alert("Discard this Sense session?", isPresented: $showDeleteConfirm) {
+                Button("Discard Session", role: .destructive) {
                     modelContext.delete(session)
                     try? modelContext.save()
                     InteroceptiveIndexEngine.recomputeFromSessions(context: modelContext)
@@ -236,7 +325,7 @@ struct HeartbeatEstimateResultsSheet: View {
 
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("This will remove the saved session.")
+                Text("This will remove the saved session from your history.")
             }
         }
         .scrollContentBackground(.hidden)

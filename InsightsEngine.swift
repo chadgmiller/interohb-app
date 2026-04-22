@@ -48,6 +48,7 @@ struct InsightSummary {
 }
 
 struct InsightNarrative {
+    let journeyLine: String
     let headline: String
     let summaryLines: [String]
     let focusNow: String
@@ -118,6 +119,7 @@ struct InsightsEngine {
 
         let recentAbsMed = median(recentNR.map { Double(abs($0.signedError)) })
         let prevAbsMed = median(previousNR.map { Double(abs($0.signedError)) })
+        let journeyLine = buildJourneyLine(sessions: usable, summary: summary)
 
         var headlineParts: [String] = []
 
@@ -170,9 +172,9 @@ struct InsightsEngine {
 
         if let rScore = breakdown.awarenessScore, let deltaError = breakdown.medianAwarenessAbsDeltaErrorBpm {
             if rScore + 8 < breakdown.accuracyScore {
-                lines.append("Awareness-session practice is contributing less strongly than Heartbeat Estimate perception accuracy right now.")
+                lines.append("Flow practice is contributing less strongly than Sense perception accuracy right now.")
             } else if rScore > breakdown.accuracyScore + 8 {
-                lines.append("Awareness-session practice is a relative strength compared to Heartbeat Estimate perception accuracy.")
+                lines.append("Flow practice is a relative strength compared to Sense perception accuracy.")
             }
             lines.append("Typical awareness-session difference is \(String(format: "%.1f", deltaError)) bpm between your estimated change and the measured change.")
         }
@@ -198,11 +200,56 @@ struct InsightsEngine {
         }()
 
         return InsightNarrative(
+            journeyLine: journeyLine,
             headline: headline,
             summaryLines: lines,
             focusNow: focus,
             confidenceNote: confidenceNote
         )
+    }
+
+    private static func buildJourneyLine(
+        sessions: [Session],
+        summary: InsightSummary
+    ) -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfMonth = calendar.date(
+            from: calendar.dateComponents([.year, .month], from: now)
+        ) ?? now
+
+        let monthlySessions = sessions.filter { $0.timestamp >= startOfMonth }
+        let monthlyContexts = Set(monthlySessions.map { InteroceptiveIndex.displayContext(for: $0) })
+
+        let periodLabel: String
+        let sessionCount: Int
+        let contextCount: Int
+
+        if !monthlySessions.isEmpty {
+            periodLabel = "this month"
+            sessionCount = monthlySessions.count
+            contextCount = monthlyContexts.count
+        } else {
+            let rollingCutoff = calendar.date(byAdding: .day, value: -30, to: now) ?? now
+            let recentSessions = sessions.filter { $0.timestamp >= rollingCutoff }
+            periodLabel = "in the last 30 days"
+            sessionCount = recentSessions.count
+            contextCount = Set(recentSessions.map { InteroceptiveIndex.displayContext(for: $0) }).count
+        }
+
+        let trendLine: String
+        switch summary.accuracyTrend {
+        case .improving:
+            trendLine = "Your heartbeat sensing is improving."
+        case .worsening:
+            trendLine = "Your heartbeat sensing has been less steady lately."
+        case .stable:
+            trendLine = "Your heartbeat sensing has been steady."
+        }
+
+        let sessionWord = sessionCount == 1 ? "session" : "sessions"
+        let contextWord = contextCount == 1 ? "context" : "contexts"
+        return "You've completed \(sessionCount) \(sessionWord) across \(contextCount) \(contextWord) \(periodLabel). \(trendLine)"
     }
 
     private static func buildFocus(sessions: [Session]) -> FocusBlock? {
@@ -328,7 +375,7 @@ struct InsightsEngine {
                 case .neutral: return "Keep your pre-estimate routine consistent."
                 }
             case "awareness":
-                return "Repeat short awareness sessions with a consistent setup and compare your change estimate to the measured reference."
+                return "Repeat short Flow sessions with a consistent setup and compare your change estimate to the measured reference."
             default:
                 if let worst = summary.worstContext {
                     return "Collect more sessions in your weakest context (\(worst))."
@@ -337,16 +384,7 @@ struct InsightsEngine {
             }
         }()
 
-        guard let tone = profile?.preferredCoachingTone else { return baseFocus }
-
-        switch tone {
-        case .encouraging:
-            return baseFocus
-        case .neutral:
-            return baseFocus
-        case .direct:
-            return baseFocus.replacingOccurrences(of: "Collect more sessions", with: "Do more sessions")
-        }
+        return baseFocus
     }
 
     static func coachLine(summary: InsightSummary, sessions: [Session]) -> String {

@@ -18,15 +18,11 @@ private struct SubmittedSessionPreference: ViewModifier {
 }
 
 struct HeartbeatEstimateSheet: View {
-    @Binding var context: String
-    @Binding var estimateValue: Double
-    @Binding var isEstimating: Bool
-    @Binding var resultText: String
-    @Binding var lastActionDate: Date?
-    @Binding var isRevealed: Bool
-    @Binding var revealTask: Task<Void, Never>?
-    @Binding var showHeartbeatEstimateSheet: Bool
-    @Binding var heartbeatDetectionMethod: Session.HeartbeatDetectionMethod
+    private static let timedBeatRange = 3...30
+
+    @Bindable var sense: SenseSessionModel
+    @Bindable var coordinator: HomeDashboardCoordinator
+    @ObservedObject var hr: HeartBeatManager
 
     @State private var latestSession: Session? = nil
     @State private var showDeleteConfirm: Bool = false
@@ -35,10 +31,8 @@ struct HeartbeatEstimateSheet: View {
     @State private var sessionStartedAt: Date = Date()
     @State private var currentTime: Date = Date()
 
-    @ObservedObject var hr: HeartBeatManager
     @Environment(\.modelContext) private var modelContext
-
-    var setCooldownTimer: (_ seconds: Int) -> Void
+    @Query(sort: \Session.timestamp, order: .reverse) private var sessions: [Session]
 
     static let lastReadingDateFormatter: DateFormatter = {
         let df = DateFormatter()
@@ -49,7 +43,7 @@ struct HeartbeatEstimateSheet: View {
 
     private var derivedCooldownRemaining: Int {
         let cooldownTotal = 60
-        guard let last = lastActionDate else { return 0 }
+        guard let last = coordinator.lastActionDate else { return 0 }
         let elapsed = Int(currentTime.timeIntervalSince(last))
         return max(0, cooldownTotal - elapsed)
     }
@@ -60,6 +54,21 @@ struct HeartbeatEstimateSheet: View {
 
     private var isTimedStartDisabled: Bool {
         !hr.isStreaming || isTimerRunning
+    }
+
+    private var isBeginnerSenseMode: Bool {
+        let windowStart = Calendar.current.date(byAdding: .day, value: -28, to: Date()) ?? .distantPast
+        let usableSenseSessions = sessions.filter { session in
+            session.sessionType == .heartbeatEstimate &&
+            session.timestamp >= windowStart &&
+            session.completionStatus == .completed &&
+            session.qualityFlag != .invalid
+        }
+        return usableSenseSessions.count < 10
+    }
+
+    private var cooldownExplanationText: String {
+        "This short cooldown helps separate sessions so your practice history reflects distinct attempts instead of repeated back-to-back entries."
     }
 
     private enum UIEstimationMode: String, CaseIterable, Identifiable {
@@ -94,7 +103,7 @@ struct HeartbeatEstimateSheet: View {
         NavigationStack {
             Form {
                 Section("") {
-                    Picker("Context", selection: $context) {
+                    Picker("Context", selection: $coordinator.context) {
                         ForEach(AppContexts.all, id: \.self) { Text($0).tag($0) }
                     }
                     .pickerStyle(.menu)
@@ -102,23 +111,20 @@ struct HeartbeatEstimateSheet: View {
                     .font(.headline)
                 }
 
-                Section("Heartbeat Sensing") {
-                    Picker("How did you detect it?", selection: $heartbeatDetectionMethod) {
+                Section("") {
+                    Picker("Detection Method", selection: $sense.detectionMethod) {
                         ForEach(Session.HeartbeatDetectionMethod.allCases) { method in
                             Text(method.label).tag(method)
                         }
                     }
                     .pickerStyle(.menu)
                     .tint(AppColors.textPrimary)
-
-                    Text("Use “Detected calmly” when estimating without pressing on pulse points like your neck or wrist.")
-                        .font(.footnote)
-                        .foregroundStyle(AppColors.textSecondary)
+                    .font(.headline)
                 }
 
-                Section("Method") {
+                Section("Entry Method") {
                     Picker("", selection: $mode) {
-                        Text("Timed").tag(UIEstimationMode.timed)
+                        Text("Calculated").tag(UIEstimationMode.timed)
                         Text("Observed").tag(UIEstimationMode.observed)
                     }
                     .pickerStyle(.segmented)
@@ -190,7 +196,7 @@ struct HeartbeatEstimateSheet: View {
                         if !isTimerRunning && countdown == 0 {
                             Section("Enter beats counted") {
                                 Picker("Beats in 10s", selection: $timedBeats) {
-                                    ForEach(3...100, id: \.self) { v in
+                                    ForEach(Self.timedBeatRange, id: \.self) { v in
                                         Text("\(v) beats").tag(v)
                                     }
                                 }
@@ -242,10 +248,11 @@ struct HeartbeatEstimateSheet: View {
                                         TimelineView(.periodic(from: .now, by: 1)) { _ in
                                             let remaining = derivedCooldownRemaining
                                             if remaining > 0 {
-                                                Text("Please wait before submitting again (\(remaining)s)")
-                                                    .font(.footnote)
-                                                    .foregroundStyle(AppColors.textSecondary)
-                                                    .frame(maxWidth: .infinity, alignment: .center)
+                                                SessionCooldownView(
+                                                    remainingSeconds: remaining,
+                                                    totalSeconds: 60,
+                                                    explanationText: cooldownExplanationText
+                                                )
                                             }
                                         }
                                     }
@@ -293,10 +300,11 @@ struct HeartbeatEstimateSheet: View {
                                     TimelineView(.periodic(from: .now, by: 1)) { _ in
                                         let remaining = derivedCooldownRemaining
                                         if remaining > 0 {
-                                            Text("Please wait before submitting again (\(remaining)s)")
-                                                .font(.footnote)
-                                                .foregroundStyle(AppColors.textSecondary)
-                                                .frame(maxWidth: .infinity, alignment: .center)
+                                            SessionCooldownView(
+                                                remainingSeconds: remaining,
+                                                totalSeconds: 60,
+                                                explanationText: cooldownExplanationText
+                                            )
                                         }
                                     }
                                 }
@@ -307,7 +315,7 @@ struct HeartbeatEstimateSheet: View {
 
                 if let session = latestSession {
                     Section("Results") {
-                        if let date = lastActionDate {
+                        if let date = coordinator.lastActionDate {
                             HStack {
                                 Text("Date/Time")
                                     .font(.headline)
@@ -404,7 +412,7 @@ struct HeartbeatEstimateSheet: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 6) {
-                        Text("Heartbeat Estimate")
+                        Text("Sense")
                             .font(.headline)
 
                         Button {
@@ -414,24 +422,24 @@ struct HeartbeatEstimateSheet: View {
                                 .font(.subheadline)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Heartbeat Estimate instructions")
+                        .accessibilityLabel("Sense instructions")
                     }
                 }
 
                 ToolbarItem(placement: .cancellationAction) {
                     Button(latestSession == nil ? "Cancel" : "Done") {
-                        showHeartbeatEstimateSheet = false
+                        sense.showSheet = false
                     }
                 }
             }
-            .alert("Delete this Heartbeat Estimate Session?", isPresented: $showDeleteConfirm) {
+            .alert("Delete this Sense session?", isPresented: $showDeleteConfirm) {
                 Button("Delete", role: .destructive) {
                     if let session = latestSession {
                         modelContext.delete(session)
                         try? modelContext.save()
                         InteroceptiveIndexEngine.recomputeFromSessions(context: modelContext)
                         latestSession = nil
-                        resultText = ""
+                        sense.resultText = ""
                     }
                 }
                 Button("Cancel", role: .cancel) { }
@@ -445,38 +453,50 @@ struct HeartbeatEstimateSheet: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Context")
                                 .font(.headline)
-                                .foregroundStyle(AppColors.textSecondary)
+                                .foregroundStyle(AppColors.textPrimary)
                             Text("Select the context relevant to your current conditions. This helps show how your interoception behaves across different situations.")
                                 .font(.footnote)
                                 .foregroundStyle(AppColors.textSecondary)
-                            Text("Method")
+                            Text("Detection Method")
                                 .font(.headline)
-                                .foregroundStyle(AppColors.textSecondary)
-                            Text("Choose Timed or Observed. If you are newer to the exercise, Timed is usually easier.")
+                                .foregroundStyle(AppColors.textPrimary)
+                            Text("\u{2022} Select \"Interoception only\" when using only your internal senses without touching a pulse point\n \u{2022} Select \"Felt pulse point\" when you are touching neck, wrist or chest to feel your pulse.")
                                 .font(.footnote)
                                 .foregroundStyle(AppColors.textSecondary)
-                            Text("Timed Method")
+                            Text("Entry Method")
+                                .font(.headline)
+                                .foregroundStyle(AppColors.textPrimary)
+                            Text("Choose Calculated or Observed. If you are newer to the exercise, Calculated is usually easier.")
+                                .font(.footnote)
+                                .foregroundStyle(AppColors.textSecondary)
+                            Text("Calculated")
                                 .font(.subheadline)
                                 .foregroundStyle(AppColors.textSecondary)
-                            Text("• Start the countdown timer\n• Count each heartbeat\n• When the timer ends, enter the number of beats and submit\n• The app converts that count into bpm")
+                            Text("\u{2022} Wait for the heartbeat sensation to feel clear\n\u{2022} Start the countdown timer\n\u{2022}  Count each heartbeat once in a steady rhythm\n\u{2022} When the timer ends, enter the number of beats and tap Submit Estimate")
                                 .font(.footnote)
                                 .foregroundStyle(AppColors.textSecondary)
-                            Text("Observed Method")
+                            Text("Observed")
                                 .font(.subheadline)
                                 .foregroundStyle(AppColors.textSecondary)
-                            Text("Pause briefly, reflect on your internal signals, choose your best bpm estimate, and submit.")
+                            Text("Pause briefly, reflect on your internal signals, choose your best bpm estimate without rushing to a familiar number and tap Submit Estimate.")
                                 .font(.footnote)
                                 .foregroundStyle(AppColors.textSecondary)
-                            Text("Tips")
+                            Text("Tips for detecting your heartbeat")
+                                .font(.headline)
+                                .foregroundStyle(AppColors.textPrimary)
+                            Text("\u{2022} Sit still for a moment before you begin\n\u{2022} Notice where the heartbeat feels easiest to detect, such as the chest, throat, or torso\n\u{2022} Relax your jaw, shoulders, and hands so tension does not mask the sensation\n\u{2022} Let your breathing settle instead of forcing a deeper breath")
+                                .font(.footnote)
+                                .foregroundStyle(AppColors.textSecondary)
+                            Text("Counting tips")
                                 .font(.headline)
                                 .foregroundStyle(AppColors.textSecondary)
-                            Text("• Remain still and quiet\n• Relax your shoulders and jaw\n• Breathe slowly\n• Focus attention on your heartbeat sensation\n• Do not touch your pulse points")
+                            Text("\u{2022} If you lose track, pause and restart instead of guessing\n\u{2022} Try not to hold your breath while counting\n\u{2022} Keep your attention on the internal sensation rather than repeating a familiar number\n\u{2022} If you need to, use the sensing method you selected and stay consistent across sessions")
                                 .font(.footnote)
                                 .foregroundStyle(AppColors.textSecondary)
                         }
                         .padding()
                     }
-                    .navigationTitle("Heartbeat Estimate Instructions")
+                    .navigationTitle("Sense Instructions")
                     .navigationBarTitleDisplayMode(.inline)
                     .presentationBackground(AppColors.screenBackground)
                     .toolbarBackground(AppColors.screenBackground, for: .navigationBar)
@@ -498,41 +518,24 @@ struct HeartbeatEstimateSheet: View {
             observedBpm = 70
             sessionStartedAt = Date()
         }
-        .task(id: lastActionDate) {
+        .task(id: coordinator.lastActionDate) {
             currentTime = Date()
-            while lastActionDate != nil && derivedCooldownRemaining > 0 {
+            while coordinator.lastActionDate != nil && derivedCooldownRemaining > 0 {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 currentTime = Date()
             }
         }
         .onAppear {
-            isEstimating = false
-            resultText = ""
-            isRevealed = false
-            revealTask?.cancel()
-            revealTask = nil
+            sense.isEstimating = false
+            sense.resultText = ""
+            sense.isRevealed = false
+            sense.revealTask?.cancel()
+            sense.revealTask = nil
             sessionStartedAt = Date()
             currentTime = Date()
-
-            let cooldownTotal = 60
-            if let last = lastActionDate {
-                let elapsed = Int(Date().timeIntervalSince(last))
-                let remaining = max(0, cooldownTotal - elapsed)
-                if remaining > 0 {
-                    setCooldownTimer(remaining)
-                }
-            }
         }
-        .onChange(of: lastActionDate) { _, newValue in
+        .onChange(of: coordinator.lastActionDate) { _, _ in
             currentTime = Date()
-            let cooldownTotal = 60
-            if let last = newValue {
-                let elapsed = Int(Date().timeIntervalSince(last))
-                let remaining = max(0, cooldownTotal - elapsed)
-                if remaining > 0 {
-                    setCooldownTimer(remaining)
-                }
-            }
         }
     }
 
@@ -543,20 +546,23 @@ struct HeartbeatEstimateSheet: View {
     ) {
         guard !isSubmitDisabled else { return }
 
-        isEstimating = false
+        sense.isEstimating = false
 
         guard let actual = hr.heartRate else {
-            resultText = "No heart rate data yet."
+            sense.resultText = "No heart rate data yet."
             return
         }
 
         let endedAt = Date()
         let signedError = estimate - actual
         let error = abs(signedError)
-        let rawScore = ScoreCalculator.heartbeatEstimateScore(error: error)
+        let rawScore = ScoreCalculator.heartbeatEstimateScore(
+            error: error,
+            isBeginnerMode: isBeginnerSenseMode
+        )
         let adjustedScore = ScoreCalculator.adjustedScore(
             rawScore: rawScore,
-            detectionMethod: heartbeatDetectionMethod
+            detectionMethod: sense.detectionMethod
         )
         let quality = ScoreCalculator.heartbeatEstimateQualityFlag(
             actualHR: actual,
@@ -565,7 +571,7 @@ struct HeartbeatEstimateSheet: View {
         )
 
         let newSession = Session(
-            context: context,
+            context: coordinator.context,
             estimate: estimate,
             actualHR: actual,
             error: error,
@@ -576,7 +582,7 @@ struct HeartbeatEstimateSheet: View {
             endedAt: endedAt,
             durationSeconds: max(1, Int(endedAt.timeIntervalSince(sessionStartedAt))),
             sessionType: .heartbeatEstimate,
-            contextTags: [context],
+            contextTags: [coordinator.context],
             notes: nil,
             completionStatus: .completed,
             qualityFlag: quality,
@@ -588,12 +594,12 @@ struct HeartbeatEstimateSheet: View {
             deviceType: deviceType,
             deviceIdentifier: hr.deviceIdentifierString,
             appVersion: appVersionString,
-            scoringModelVersion: "2.1",
+            scoringModelVersion: "3.0",
             insightModelVersion: "1.0"
         )
 
         newSession.heartbeatEstimationMethod = method
-        newSession.heartbeatDetectionMethod = heartbeatDetectionMethod
+        newSession.heartbeatDetectionMethod = sense.detectionMethod
         newSession.heartbeatTimedDurationSeconds = timedDuration
         newSession.normalizedHeartbeatAccuracy = Double(rawScore)
 
@@ -605,7 +611,7 @@ struct HeartbeatEstimateSheet: View {
 
         latestSession = newSession
         submittedSessionForPreference = newSession
-        showHeartbeatEstimateSheet = false
+        sense.showSheet = false
 
         let generator = UINotificationFeedbackGenerator()
         if adjustedScore >= 80 {
@@ -616,32 +622,22 @@ struct HeartbeatEstimateSheet: View {
             generator.notificationOccurred(.error)
         }
 
-        isRevealed = true
-        revealTask?.cancel()
-        revealTask = Task { @MainActor in
+        sense.isRevealed = true
+        sense.revealTask?.cancel()
+        sense.revealTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 10_000_000_000)
-            isRevealed = false
+            sense.isRevealed = false
         }
 
-        resultText = "Estimate: \(estimate) bpm • Actual: \(actual) bpm • Accuracy: \(rawScore) • Training Score: \(adjustedScore)"
-        lastActionDate = .now
-        setCooldownTimer(60)
+        sense.resultText = "Estimate: \(estimate) bpm \u{2022} Actual: \(actual) bpm \u{2022} Accuracy: \(rawScore) \u{2022} Training Score: \(adjustedScore)"
+        coordinator.lastActionDate = .now
     }
 }
 
 #Preview {
-    let hr = HeartBeatManager()
     HeartbeatEstimateSheet(
-        context: .constant(AppContexts.defaultSelection),
-        estimateValue: .constant(70),
-        isEstimating: .constant(false),
-        resultText: .constant(""),
-        lastActionDate: .constant(nil),
-        isRevealed: .constant(false),
-        revealTask: .constant(nil),
-        showHeartbeatEstimateSheet: .constant(true),
-        heartbeatDetectionMethod: .constant(.internalOnly),
-        hr: hr,
-        setCooldownTimer: { _ in }
+        sense: SenseSessionModel(),
+        coordinator: HomeDashboardCoordinator(),
+        hr: HeartBeatManager()
     )
 }

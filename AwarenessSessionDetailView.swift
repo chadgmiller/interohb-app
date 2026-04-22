@@ -31,21 +31,6 @@ protocol AwarenessSessionRepresentable {
 
 extension Session: AwarenessSessionRepresentable {}
 
-struct AwarenessTagChip: View {
-    let text: String
-    let isHelpful: Bool
-
-    var body: some View {
-        Text(text)
-            .font(.caption)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(isHelpful ? AppColors.helpedTagBackground.opacity(0.12) : AppColors.hinderTagBackground.opacity(0.12))
-            .foregroundStyle(isHelpful ? AppColors.helpedTagForeground : AppColors.hinderTagForeground)
-            .clipShape(Capsule())
-    }
-}
-
 struct AwarenessSessionDetailView: View {
     let session: AwarenessSessionRepresentable
 
@@ -238,7 +223,7 @@ struct AwarenessSessionDetailView: View {
                             .foregroundStyle(AppColors.textSecondary)
 
                         if let tags = session.awarenessTags, !tags.isEmpty {
-                            FlowLayout(tags: tags, helpful: true)
+                            SessionTagFlowLayout(tags: tags, helpful: true)
                         } else {
                             Text("-")
                                 .foregroundStyle(AppColors.textSecondary)
@@ -251,7 +236,7 @@ struct AwarenessSessionDetailView: View {
                             .foregroundStyle(AppColors.textSecondary)
 
                         if let hinderTags = session.awarenessHinderTags, !hinderTags.isEmpty {
-                            FlowLayout(tags: hinderTags, helpful: false)
+                            SessionTagFlowLayout(tags: hinderTags, helpful: false)
                         } else {
                             Text("-")
                                 .foregroundStyle(AppColors.textSecondary)
@@ -272,11 +257,11 @@ struct AwarenessSessionDetailView: View {
                 }
             }
         }
-        .navigationTitle("Awareness Session Details")
+        .navigationTitle("Flow Details")
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
         .background(AppColors.screenBackground.ignoresSafeArea())
-        .alert("Delete this Awareness Session?", isPresented: $showDeleteConfirm) {
+        .alert("Delete this Flow session?", isPresented: $showDeleteConfirm) {
             Button("Delete", role: .destructive) {
                 if let s = deletableSession {
                     modelContext.delete(s)
@@ -293,18 +278,5 @@ struct AwarenessSessionDetailView: View {
 
     private func signedBpm(_ value: Int) -> String {
         value > 0 ? "+\(value) bpm" : "\(value) bpm"
-    }
-}
-
-private struct FlowLayout: View {
-    let tags: [String]
-    let helpful: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(tags, id: \.self) { tag in
-                AwarenessTagChip(text: tag, isHelpful: helpful)
-            }
-        }
     }
 }

@@ -8,27 +8,9 @@
 import SwiftUI
 
 struct AwarenessSessionSheet: View {
-    @Binding var context: String
-    @Binding var useTimeLimit: Bool
-    @Binding var timeLimitSec: Int
-    @Binding var lastAwarenessDate: Date?
-    @Binding var lastActionDate: Date?
-    @Binding var baselineHR: Int?
-    @Binding var awarenessStartTime: Date?
-    @Binding var showAwarenessSheet: Bool
-    @Binding var heartbeatDetectionMethod: Session.HeartbeatDetectionMethod
-
+    @Bindable var awareness: AwarenessSessionModel
+    @Bindable var coordinator: HomeDashboardCoordinator
     @ObservedObject var hr: HeartBeatManager
-
-    @Binding var isAwarenessRunning: Bool
-    @Binding var isAwarenessPaused: Bool
-    @Binding var elapsedSec: Int
-    @Binding var activeTimeLimitSec: Int?
-    @Binding var timer: Timer?
-    @Binding var showAbortConfirm: Bool
-    @Binding var showAwarenessSignalLossAlert: Bool
-
-    let setCooldownTimer: (_ seconds: Int) -> Void
 
     @State private var stagedUseTimeLimit: Bool = true
     @State private var stagedTimeLimitSec: Int = 60
@@ -37,17 +19,21 @@ struct AwarenessSessionSheet: View {
 
     private var derivedCooldownRemaining: Int {
         let cooldownTotal = 60
-        guard let last = lastActionDate else { return 0 }
+        guard let last = coordinator.lastActionDate else { return 0 }
         let elapsed = Int(Date().timeIntervalSince(last))
         return max(0, cooldownTotal - elapsed)
     }
 
     private var effectiveBaseline: Int? {
-        baselineHR ?? hr.heartRate
+        awareness.baseline ?? hr.heartRate
     }
 
     private var isSessionActive: Bool {
-        isAwarenessRunning || isAwarenessPaused
+        awareness.isRunning || awareness.isPaused
+    }
+
+    private var cooldownExplanationText: String {
+        "This short cooldown helps keep sessions distinct, so your history reflects separate practice periods instead of repeated back-to-back entries."
     }
 
     var body: some View {
@@ -63,7 +49,7 @@ struct AwarenessSessionSheet: View {
                 }
 
                 Section("Heartbeat Sensing") {
-                    Picker("How did you detect it?", selection: $heartbeatDetectionMethod) {
+                    Picker("Detection Method", selection: $awareness.detectionMethod) {
                         ForEach(Session.HeartbeatDetectionMethod.allCases) { method in
                             Text(method.label).tag(method)
                         }
@@ -71,7 +57,7 @@ struct AwarenessSessionSheet: View {
                     .pickerStyle(.menu)
                     .tint(AppColors.textPrimary)
 
-                    Text("Use “Detected calmly” when you are not pressing on pulse points like your neck or wrist.")
+                    Text("Use \u{201c}Interoception only\u{201d} when you are not pressing on pulse points like your neck or wrist.")
                         .font(.footnote)
                         .foregroundStyle(AppColors.textSecondary)
                 }
@@ -109,19 +95,19 @@ struct AwarenessSessionSheet: View {
                 }
 
                 Section {
-                    if isAwarenessRunning {
+                    if awareness.isRunning {
                         VStack(spacing: 10) {
-                            Text("Observing heartbeat…")
+                            Text("Observe your heartbeat\u{2026}")
                                 .font(.subheadline)
                                 .foregroundStyle(AppColors.textSecondary)
 
-                            if let limit = activeTimeLimitSec {
+                            if let limit = awareness.activeTimeLimitSec {
                                 TimelineView(.periodic(from: .now, by: 1.0)) { _ in
                                     let elapsedDisplay: Int = {
-                                        if let start = awarenessStartTime, isAwarenessRunning, !isAwarenessPaused {
+                                        if let start = awareness.startTime, awareness.isRunning, !awareness.isPaused {
                                             return max(0, Int(Date().timeIntervalSince(start)))
                                         } else {
-                                            return elapsedSec
+                                            return awareness.elapsedSec
                                         }
                                     }()
 
@@ -142,38 +128,26 @@ struct AwarenessSessionSheet: View {
                             }
 
                             HStack {
-                                if activeTimeLimitSec == nil {
+                                if awareness.activeTimeLimitSec == nil {
                                     Spacer()
                                 }
 
                                 VStack(spacing: 10) {
                                     Button {
-                                        if isAwarenessPaused {
-                                            isAwarenessPaused = false
-                                            if timer == nil {
-                                                let t = Timer(timeInterval: 1.0, repeats: true) { _ in
-                                                    NotificationCenter.default.post(name: .init("AwarenessTick"), object: nil)
-                                                }
-                                                RunLoop.main.add(t, forMode: .common)
-                                                timer = t
-                                            }
+                                        if awareness.isPaused {
+                                            awareness.resume(hr: hr)
                                         } else {
-                                            isAwarenessPaused = true
-                                            timer?.invalidate()
-                                            timer = nil
+                                            awareness.pause()
                                         }
                                     } label: {
-                                        Label(isAwarenessPaused ? "Resume" : "Pause", systemImage: isAwarenessPaused ? "play.fill" : "pause.fill")
-                                            .foregroundStyle(isAwarenessPaused ? AppColors.breathTeal : AppColors.textSecondary)
+                                        Label(awareness.isPaused ? "Resume" : "Pause", systemImage: awareness.isPaused ? "play.fill" : "pause.fill")
+                                            .foregroundStyle(awareness.isPaused ? AppColors.breathTeal : AppColors.textSecondary)
                                     }
                                     .buttonStyle(.bordered)
                                     .tint(AppColors.breathTeal)
 
                                     Button {
-                                        isAwarenessPaused = true
-                                        timer?.invalidate()
-                                        timer = nil
-                                        showAbortConfirm = true
+                                        awareness.requestStop()
                                     } label: {
                                         Label("Finish Session", systemImage: "checkmark.circle.fill")
                                     }
@@ -182,7 +156,7 @@ struct AwarenessSessionSheet: View {
                                     .tint(AppColors.breathTeal)
                                 }
 
-                                if activeTimeLimitSec == nil {
+                                if awareness.activeTimeLimitSec == nil {
                                     Spacer()
                                 }
                             }
@@ -194,21 +168,13 @@ struct AwarenessSessionSheet: View {
                                     guard let baseline = effectiveBaseline else { return }
                                     guard hr.canUseCurrentReading else { return }
 
-                                    useTimeLimit = stagedUseTimeLimit
-                                    timeLimitSec = stagedTimeLimitSec
-                                    context = stagedContext
+                                    awareness.useTimeLimit = stagedUseTimeLimit
+                                    awareness.timeLimitSec = stagedTimeLimitSec
+                                    coordinator.context = stagedContext
 
-                                    NotificationCenter.default.post(
-                                        name: .init("AwarenessStart"),
-                                        object: nil,
-                                        userInfo: [
-                                            "baseline": baseline,
-                                            "timeLimit": stagedUseTimeLimit ? stagedTimeLimitSec : 0
-                                        ]
-                                    )
-
-                                    setCooldownTimer(60)
-                                    lastActionDate = .now
+                                    let timeLimit = stagedUseTimeLimit ? stagedTimeLimitSec : nil
+                                    awareness.start(baselineHR: baseline, timeLimitSec: timeLimit, hr: hr)
+                                    coordinator.lastActionDate = .now
                                 } label: {
                                     Label("Begin", systemImage: "play.fill")
                                         .font(.headline)
@@ -220,9 +186,11 @@ struct AwarenessSessionSheet: View {
                                 .disabled(!hr.canUseCurrentReading || derivedCooldownRemaining > 0)
 
                                 if derivedCooldownRemaining > 0 {
-                                    Text("Please wait before starting again (\(derivedCooldownRemaining)s)")
-                                        .font(.footnote)
-                                        .foregroundStyle(AppColors.textSecondary)
+                                    SessionCooldownView(
+                                        remainingSeconds: derivedCooldownRemaining,
+                                        totalSeconds: 60,
+                                        explanationText: cooldownExplanationText
+                                    )
                                 }
                             }
                         }
@@ -238,7 +206,7 @@ struct AwarenessSessionSheet: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 6) {
-                        Text("Awareness Session")
+                        Text("Flow")
                             .font(.headline)
                         Button {
                             showSetupInstructions = true
@@ -250,27 +218,18 @@ struct AwarenessSessionSheet: View {
                     }
                 }
 
-                if !isAwarenessRunning && !showAbortConfirm {
+                if !awareness.isRunning && !awareness.showAbortConfirm {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") {
-                            showAwarenessSheet = false
+                            awareness.showSessionSheet = false
                         }
                     }
                 }
             }
             .onAppear {
-                stagedUseTimeLimit = useTimeLimit
-                stagedTimeLimitSec = timeLimitSec
-                stagedContext = context
-
-                let remaining = derivedCooldownRemaining
-                if remaining > 0 {
-                    setCooldownTimer(remaining)
-                }
-            }
-            .onDisappear {
-                timer?.invalidate()
-                timer = nil
+                stagedUseTimeLimit = awareness.useTimeLimit
+                stagedTimeLimitSec = awareness.timeLimitSec
+                stagedContext = coordinator.context
             }
             .fullScreenCover(isPresented: $showSetupInstructions) {
                 NavigationStack {
@@ -295,16 +254,22 @@ struct AwarenessSessionSheet: View {
                             Text("Use a time limit if you want a more structured session. Leave it off for open-ended heartbeat-awareness practice.")
                                 .font(.footnote)
                                 .foregroundStyle(AppColors.textSecondary)
-                            Text("Tips")
+                            Text("How to monitor change over time")
                                 .font(.headline)
                                 .foregroundStyle(AppColors.textSecondary)
-                            Text("• Start in a comfortable position\n• Stay still if possible\n• Notice how your heartbeat feels before you begin\n• Keep your setup consistent across sessions\n• Use the measured heart-rate reference as a comparison, not a goal to force")
+                            Text("\u{2022} breathe comfortably\n\u{2022} stay still if possible\n\u{2022} relax your jaw and shoulders so changes in heartbeat feel easier to notice\n\u{2022} pay attention to whether the heartbeat feels faster, slower, stronger, or softer as time passes\n\u{2022} reduce distractions so you can notice gradual shifts\n\u{2022} stay gentle and avoid trying to force the heartbeat to change")
+                                .font(.footnote)
+                                .foregroundStyle(AppColors.textSecondary)
+                            Text("If Flow feels unclear")
+                                .font(.headline)
+                                .foregroundStyle(AppColors.textSecondary)
+                            Text("Try one change at a time:\n1) adjust your posture\n2) reduce distractions\n3) shorten the session and focus only on whether the heartbeat is changing\n4) choose a quieter environment\n5) compare the beginning of the session with the end instead of judging every second")
                                 .font(.footnote)
                                 .foregroundStyle(AppColors.textSecondary)
                         }
                         .padding()
                     }
-                    .navigationTitle("Awareness Session Instructions")
+                    .navigationTitle("Flow Instructions")
                     .navigationBarTitleDisplayMode(.inline)
                     .presentationBackground(AppColors.screenBackground)
                     .toolbarBackground(AppColors.screenBackground, for: .navigationBar)
@@ -317,28 +282,18 @@ struct AwarenessSessionSheet: View {
                 }
             }
             .confirmationDialog(
-                "Finish this Awareness Session and enter your heartbeat change estimate?",
-                isPresented: $showAbortConfirm,
+                "Finish this Flow session and enter your heartbeat change estimate?",
+                isPresented: $awareness.showAbortConfirm,
                 titleVisibility: .visible
             ) {
                 Button("Finish Session") {
-                    NotificationCenter.default.post(name: .init("AwarenessFinish"), object: nil)
-                    showAwarenessSheet = false
+                    awareness.finishFromSheet(hr: hr)
                 }
                 Button("Keep Observing", role: .cancel) {
-                    if isAwarenessRunning {
-                        isAwarenessPaused = false
-                        if timer == nil {
-                            let t = Timer(timeInterval: 1.0, repeats: true) { _ in
-                                NotificationCenter.default.post(name: .init("AwarenessTick"), object: nil)
-                            }
-                            RunLoop.main.add(t, forMode: .common)
-                            timer = t
-                        }
-                    }
+                    awareness.resume(hr: hr)
                 }
             }
-            .alert("Awareness Stopped", isPresented: $showAwarenessSignalLossAlert) {
+            .alert("Awareness Stopped", isPresented: $awareness.showSignalLossAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text("The heart-rate reference signal was lost. Please reconnect or restart broadcasting and try again.")

@@ -130,21 +130,9 @@ struct ProfileFormView: View {
         )
     }
 
-    private var coachingToneBinding: Binding<CoachingTone> {
-        Binding(
-            get: { profile.preferredCoachingTone },
-            set: { newValue in
-                if profile.preferredCoachingTone != newValue {
-                    profile.preferredCoachingTone = newValue
-                    debouncedTouch()
-                }
-            }
-        )
-    }
-
     private var targetSessionsBinding: Binding<Int> {
         Binding(
-            get: { profile.targetSessionsPerWeek },
+            get: { profile.targetSessionsPerWeek ?? 4 },
             set: { newValue in
                 let clamped = min(max(newValue, 1), 14)
                 if profile.targetSessionsPerWeek != clamped {
@@ -267,12 +255,73 @@ struct ProfileFormView: View {
         return sessions.contains { calendar.isDate($0.timestamp, inSameDayAs: now) }
     }
 
+    private func currentSessionStreakDays(_ sessions: [Session], now: Date = Date()) -> Int {
+        let calendar = Calendar.current
+        let uniqueDays = Set(sessions.map { calendar.startOfDay(for: $0.timestamp) })
+        guard !uniqueDays.isEmpty else { return 0 }
+
+        var streak = 0
+        var cursor = calendar.startOfDay(for: now)
+
+        if !uniqueDays.contains(cursor) {
+            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: cursor),
+                  uniqueDays.contains(yesterday) else {
+                return 0
+            }
+            cursor = yesterday
+        }
+
+        while uniqueDays.contains(cursor) {
+            streak += 1
+            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = previousDay
+        }
+
+        return streak
+    }
+
+    private func daysSinceLastSession(_ sessions: [Session], now: Date = Date()) -> Int? {
+        guard let latestSession = sessions.max(by: { $0.timestamp < $1.timestamp }) else { return nil }
+        let startOfToday = Calendar.current.startOfDay(for: now)
+        let lastSessionDay = Calendar.current.startOfDay(for: latestSession.timestamp)
+        return Calendar.current.dateComponents([.day], from: lastSessionDay, to: startOfToday).day
+    }
+
+    private func sessionsUntilInsightsUnlock(_ sessions: [Session]) -> Int? {
+        let usableSenseCount = sessions.filter {
+            $0.sessionType == .heartbeatEstimate &&
+            $0.completionStatus == .completed &&
+            $0.qualityFlag != .invalid
+        }.count
+
+        let remaining = max(0, 5 - usableSenseCount)
+        return remaining > 0 ? remaining : nil
+    }
+
+    private func reminderBody(for sessions: [Session], now: Date = Date()) -> String {
+        let streakDays = currentSessionStreakDays(sessions, now: now)
+        if streakDays >= 2 {
+            return "You're on a \(streakDays)-day streak! Keep it going."
+        }
+
+        if let daysSinceLast = daysSinceLastSession(sessions, now: now), daysSinceLast >= 2 {
+            return "It's been \(daysSinceLast) days. Even a quick Sense session helps."
+        }
+
+        if let remaining = sessionsUntilInsightsUnlock(sessions), remaining <= 2 {
+            return "You're \(remaining) session\(remaining == 1 ? "" : "s") away from unlocking new Insights."
+        }
+
+        return "Take a moment to do a Sense or Flow session."
+    }
+
     private func rescheduleSessionReminder() async {
         await SessionReminderManager.shared.rescheduleReminder(
             notificationsEnabled: profile.notificationsEnabled,
             reminderHour: profile.reminderHour,
             reminderMinute: profile.reminderMinute,
-            hasCompletedSessionToday: hasCompletedSessionToday(sessions)
+            hasCompletedSessionToday: hasCompletedSessionToday(sessions),
+            reminderBody: reminderBody(for: sessions)
         )
     }
 
@@ -426,38 +475,56 @@ struct ProfileFormView: View {
                 Text(">> \(profile.primaryGoal.helperText)")
                     .font(.footnote)
                     .foregroundStyle(AppColors.textSecondary)
-
-                Picker("Coaching tone", selection: coachingToneBinding) {
-                    ForEach(CoachingTone.allCases) { tone in
-                        Text(tone.label).tag(tone)
-                    }
-                    .foregroundStyle(AppColors.textSecondary)
-                }
-                .tint(AppColors.textSecondary)
                 
-                Stepper(value: targetSessionsBinding, in: 1...14) {
-                    HStack {
-                        Text("Target sessions / week").foregroundStyle(AppColors.textPrimary)
-                        Spacer()
-                        Text("\(profile.targetSessionsPerWeek)")
-                        .foregroundStyle(AppColors.textSecondary)
+                if profile.targetSessionsPerWeek == nil {
+                    Button {
+                        profile.targetSessionsPerWeek = 4
+                        debouncedTouch()
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Set weekly session goal")
+                                    .foregroundStyle(AppColors.textPrimary)
+                                Text("Add a weekly target to track progress on Home.")
+                                    .font(.footnote)
+                                    .foregroundStyle(AppColors.textSecondary)
+                            }
+                            Spacer()
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundStyle(AppColors.breathTeal)
+                        }
+                    }
+                } else {
+                    Stepper(value: targetSessionsBinding, in: 1...14) {
+                        HStack {
+                            Text("Target sessions / week").foregroundStyle(AppColors.textPrimary)
+                            Spacer()
+                            Text("\(profile.targetSessionsPerWeek ?? 4)")
+                                .foregroundStyle(AppColors.textSecondary)
+                        }
+                    }
+
+                    Button("Clear weekly goal", role: .destructive) {
+                        profile.targetSessionsPerWeek = nil
+                        debouncedTouch()
                     }
                 }
 
-                Button {
-                    showRestingHRSheet = true
-                } label: {
-                    HStack {
-                        Text("Resting HR baseline").foregroundStyle(AppColors.textPrimary)
-                        Spacer()
-                        Text(restingHRDisplayText).foregroundStyle(AppColors.textSecondary)
-                    }
-                    .foregroundStyle(AppColors.textPrimary)
-                }
-                
-                Text(">> Resting HR baseline feature to be used in later versions for more tailored comparisons and insights.")
-                    .font(.footnote)
-                    .foregroundStyle(AppColors.textSecondary)
+//  Feature for later versions
+//                Button {
+//                    showRestingHRSheet = true
+//                } label: {
+//                    HStack {
+//                        Text("Resting HR baseline").foregroundStyle(AppColors.textPrimary)
+//                        Spacer()
+//                        Text(restingHRDisplayText).foregroundStyle(AppColors.textSecondary)
+//                    }
+//                    .foregroundStyle(AppColors.textPrimary)
+//                }
+//                
+//                Text(">> Resting HR baseline feature to be used in later versions for more tailored comparisons and insights.")
+//                    .font(.footnote)
+//                    .foregroundStyle(AppColors.textSecondary)
             }
 
             Section {
@@ -516,13 +583,15 @@ struct ProfileFormView: View {
                 Toggle("Personalized insights", isOn: personalizedInsightsBinding)
                     .tint(AppColors.breathTeal)
 
-                Toggle("Allow AI-generated summaries", isOn: aiInsightsBinding)
-                    .tint(AppColors.breathTeal)
-                    .disabled(true)
-
-                Text(">>AI summaries to be added in later versions.")
-                    .font(.footnote)
-                    .foregroundStyle(AppColors.textSecondary)
+// Feature for later versions
+//
+//                Toggle("Allow AI-generated summaries", isOn: aiInsightsBinding)
+//                    .tint(AppColors.breathTeal)
+//                    .disabled(true)
+//
+//                Text(">>AI summaries to be added in later versions.")
+//                    .font(.footnote)
+//                    .foregroundStyle(AppColors.textSecondary)
             }
 
             Section("Appearance") {
@@ -578,7 +647,7 @@ struct ProfileFormView: View {
             }
 
             Section("Privacy") {
-                Text("Profile data stays on your device. You can reset it any time.")
+                Text("All InteroHB data stays on your device. If you delete the app, all application data, including your full session history, will be permanently deleted.")
                     .font(.footnote)
                     .foregroundStyle(AppColors.textSecondary)
 
@@ -804,7 +873,7 @@ struct ProfileFormView: View {
                 resetProfile()
             }
         } message: {
-            Text("This will remove all Profile data.")
+            Text("This will remove your Profile data from this device. If you delete InteroHB, all application data, including your full session history, will also be permanently deleted.")
         }
         .alert("Notifications Disabled", isPresented: $showNotificationsDeniedAlert) {
             Button("OK", role: .cancel) { }
@@ -851,8 +920,7 @@ struct ProfileFormView: View {
         profile.avatarEmoji = nil
         profile.experienceLevel = .beginner
         profile.primaryGoal = .awareness
-        profile.preferredCoachingTone = .encouraging
-        profile.targetSessionsPerWeek = 4
+        profile.targetSessionsPerWeek = nil
         profile.restingHRBaseline = nil
         profile.allowPersonalizedInsights = true
         profile.allowAIInsightGeneration = false

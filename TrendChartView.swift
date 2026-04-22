@@ -383,7 +383,7 @@ struct HeartbeatEstimateChartView: View {
 
                 if pulseMetric == .score {
                     SingleTrendChartCard(
-                        title: "Heartbeat Estimate Score",
+                        title: "Sense Score",
                         yLabel: "Score",
                         granularity: granularity,
                         range: range,
@@ -415,7 +415,7 @@ struct HeartbeatEstimateChartView: View {
 
                         VStack(alignment: .leading, spacing: 6) {
                             SingleTrendChartCard(
-                                title: "Heartbeat Estimate Accuracy",
+                                title: "Sense Accuracy",
                                 yLabel: "Abs Error",
                                 granularity: granularity,
                                 range: range,
@@ -453,7 +453,7 @@ struct HeartbeatEstimateChartView: View {
                         }
 
                         SingleTrendChartCard(
-                            title: "Heartbeat Estimate Bias",
+                            title: "Sense Bias",
                             yLabel: "Signed Error",
                             granularity: granularity,
                             range: range,

@@ -13,6 +13,7 @@
 /* Begin PBXFileReference section */
 		0F930E9F2F7E39E5000E1665 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
 		0FE45E802F9386B200A747F3 /* InteroHB.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = InteroHB.xcodeproj; sourceTree = "<group>"; };
+		0FE45FC92F96E87400A747F3 /* InteroHB.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = InteroHB.xcodeproj; sourceTree = "<group>"; };
 		1F51B3F32F3EDCCA00DB0B3A /* InteroHB.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InteroHB.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -69,6 +70,11 @@
 			sourceTree = "<group>";
 		};
 		0FE45E962F9386B200A747F3 /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
+			sourceTree = "<group>";
+		};
+		0FE45FDF2F96E87400A747F3 /* Products */ = {
 			isa = PBXGroup;
 			name = Products;
 			sourceTree = "<group>";
@@ -148,6 +154,10 @@
 				{
 					ProductGroup = 0FE45E962F9386B200A747F3 /* Products */;
 					ProjectRef = 0FE45E802F9386B200A747F3 /* InteroHB.xcodeproj */;
+				},
+				{
+					ProductGroup = 0FE45FDF2F96E87400A747F3 /* Products */;
+					ProjectRef = 0FE45FC92F96E87400A747F3 /* InteroHB.xcodeproj */;
 				},
 			);
 			projectRoot = "";
@@ -345,8 +355,8 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.millergchad.interoHB;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.chadgmiller.interoHB;
+				PRODUCT_BUNDLE_IDENTIFIER = com.millergchad.interoHR;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.chadgmiller.interoHR;
 				PRODUCT_NAME = InteroHB;
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
@@ -409,8 +419,8 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.millergchad.interoHB;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.chadgmiller.interoHB;
+				PRODUCT_BUNDLE_IDENTIFIER = com.millergchad.interoHR;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.chadgmiller.interoHR;
 				PRODUCT_NAME = InteroHB;
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;

@@ -4,5 +4,11 @@
 <dict>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>InteroHB uses Bluetooth to connect to your saved heart rate device and optionally reconnect to it when you enable auto-reconnect.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
 </dict>
 </plist>

@@ -31,7 +31,7 @@ final class PurchaseManager: ObservableObject {
         let isInBillingRetry: Bool
     }
 
-    static let premiumYearlyID = "InteroHB.premium.yearly"
+    static let premiumYearlyID = "interohr.premium.yearly"
 
     @Published private(set) var products: [Product] = []
     @Published private(set) var purchasedProductIDs: Set<String> = []
@@ -47,6 +47,9 @@ final class PurchaseManager: ObservableObject {
     )
     @Published var purchaseErrorMessage: String?
     @Published var purchaseInfoMessage: String?
+#if DEBUG
+    @Published private(set) var debugDiagnostics: [String] = []
+#endif
 
     private var updatesTask: Task<Void, Never>?
     private var entitlementRefreshTask: Task<Void, Never>?
@@ -91,14 +94,19 @@ final class PurchaseManager: ObservableObject {
         defer { isLoading = false }
 
         do {
+            debugLog("Requesting product IDs: \(Self.premiumYearlyID)")
             let fetched = try await Product.products(for: [Self.premiumYearlyID])
             self.products = fetched.sorted { $0.id < $1.id }
+            let fetchedIDs = fetched.map { $0.id }.joined(separator: ", ")
+            debugLog("Fetched product IDs: \(fetchedIDs)")
             await refreshIntroOfferEligibility()
 
             if fetched.isEmpty {
                 purchaseErrorMessage = "Subscription is currently unavailable. Please try again later."
+                debugLog("No matching products were returned by StoreKit.")
             }
         } catch {
+            debugLog("Product request failed: \(String(describing: error))")
             self.purchaseErrorMessage = productRequestErrorMessage(for: error)
         }
     }
@@ -144,11 +152,13 @@ final class PurchaseManager: ObservableObject {
                 willAutoRenew: false,
                 isInBillingRetry: false
             )
+            debugLog("No premium product subscription metadata is available.")
             return
         }
 
         do {
             let statuses = try await subscription.status
+            debugLog("Subscription status count: \(statuses.count)")
             let resolvedStatuses = statuses.compactMap(resolvePremiumSubscriptionStatus(from:))
 
             premiumSubscriptionStatus = resolvedStatuses.max(by: { priority(for: $0.phase) < priority(for: $1.phase) })
@@ -158,7 +168,9 @@ final class PurchaseManager: ObservableObject {
                     willAutoRenew: false,
                     isInBillingRetry: false
                 )
+            debugLog("Resolved subscription phase: \(String(describing: premiumSubscriptionStatus.phase))")
         } catch {
+            debugLog("Subscription status refresh failed: \(String(describing: error))")
             premiumSubscriptionStatus = PremiumSubscriptionStatus(
                 phase: .unknown,
                 expirationDate: nil,
@@ -285,13 +297,19 @@ final class PurchaseManager: ObservableObject {
             switch result {
             case .verified(let transaction):
                 newIDs.insert(transaction.productID)
+                debugLog("Verified entitlement: \(transaction.productID)")
             case .unverified:
+                debugLog("Encountered unverified entitlement.")
                 continue
             }
         }
 
         purchasedProductIDs = newIDs
         isPremium = newIDs.contains(Self.premiumYearlyID)
+        let entitlementIDs = newIDs.sorted().joined(separator: ", ")
+        let premiumActive = isPremium ? "yes" : "no"
+        debugLog("Current entitlements: \(entitlementIDs)")
+        debugLog("Premium active: \(premiumActive)")
         await refreshSubscriptionStatus()
     }
 
@@ -424,4 +442,16 @@ final class PurchaseManager: ObservableObject {
 
         return baseMessage
     }
+
+#if DEBUG
+    private func debugLog(_ message: String) {
+        debugDiagnostics.append(message)
+        if debugDiagnostics.count > 20 {
+            debugDiagnostics.removeFirst(debugDiagnostics.count - 20)
+        }
+        print("[PurchaseManager DEBUG] \(message)")
+    }
+#else
+    private func debugLog(_ message: String) { }
+#endif
 }

@@ -8,7 +8,6 @@
 import SwiftUI
 import SwiftData
 import UIKit
-import AudioToolbox
 import Combine
 
 struct ContentView: View {
@@ -66,103 +65,92 @@ struct ContentView: View {
 }
 
 struct HomeDashboardView: View {
-    
-    @StateObject private var hr = HeartBeatManager()
-    
-    @State private var context: String = AppContexts.defaultSelection
-    // State variables for Heartbeat Estimate
-    @State private var estimateValue: Double = 70
-    // Context string
-    @State private var resultText: String = ""
-    
-    @State private var isEstimating: Bool = false
-    @State private var isRevealed: Bool = false
-    @State private var revealTask: Task<Void, Never>? = nil
-    
-    //Awareness
-    @State private var isAwarenessRunning = false
-    @State private var awarenessBaseline: Int? = nil
-    @State private var awarenessStartTime: Date? = nil
-    @State private var awarenessSessionResult: String = ""
-    @State private var awarenessDeltaEstimate: Int = 0
-    @State private var showStopConfirm = false
-    @State private var timeLimitSec: Int = 60   // default, but we’ll compute smarter
-    @State private var showStartSheet = false
-    @State private var elapsedSec: Int = 0
-    @State private var timer: Timer? = nil
-    @State private var showAwarenessSessionSheet = false
-    @State private var awarenessUseTimeLimit: Bool = true
-    @State private var awarenessTimeLimitSec: Int = 60        // default time limit
-    @State private var activeTimeLimitSec: Int? = nil
-    @State private var showAbortConfirm = false
-    @State private var showAwarenessSignalLossAlert = false
-    @State private var lastAwarenessScore: Int? = nil
-    @State private var lastAwarenessCoachLine: String? = nil
-    @State private var lastAwarenessDate: Date? = nil
-    @State private var pendingAwarenessEndHR: Int? = nil
-    @State private var pendingAwarenessDurationSec: Int? = nil
-    @State private var pendingAwarenessEndedAt: Date? = nil
 
-    // Added new @State for results sheet presentation
-    @State private var showAwarenessSessionResultsSheet = false
-    @State private var showAwarenessDeltaEstimateSheet = false
+    // MARK: - Models (replaces ~50 @State properties)
 
-    // Awareness tags selection state
-    @State private var selectedAwarenessTags: Set<String> = []
-    private let awarenessHelpTags: [String] = ["Breathing", "Eyes closed", "Posture", "Mind quiet", "Environment", "Other"]
-    private let awarenessHinderTags: [String] = ["External Noise","Session Interrupted","Couldn't focus","Too rushed","Too tired","Breathing felt off","Uncomfortable position","Other"]
+    @State private var awareness = AwarenessSessionModel()
+    @State private var sense = SenseSessionModel()
+    @State private var coordinator = HomeDashboardCoordinator()
 
-    @State private var awarenessHRSeries: [(time: Int, hr: Int)] = []
-    
-    // State variable to track if devices have been scanned and shown
-    @State private var hasScannedDevices: Bool = false
-    
-    // State variable to store last connected device name
-    @State private var lastDeviceName: String? = nil
-    
-    //
-    @State private var lastActionDate: Date? = nil
-    
-    // Toast state vars
-    @State private var toastMessage: String? = nil
-    @State private var showToast: Bool = false
-    
-    // State variable for pausing awareness
-    @State private var isAwarenessPaused = false
+    // MARK: - Kept in View
 
-    // State variable for Heartbeat Estimate help and sheet
-    @State private var showHeartbeatEstimateHelp = false
-    @State private var showHeartbeatEstimateSheet = false
+    @StateObject private var hr = HeartBeatManager.shared
 
-    // State variable for Awareness help sheet control
-    @State private var showAwarenessHelp: Bool = false
+    // MARK: - SwiftData
 
-    // Added new state for devices sheet
-    @State private var showDevicesSheet = false
-    @State private var heartbeatEstimateDetectionMethod: Session.HeartbeatDetectionMethod = .internalOnly
-    @State private var awarenessDetectionMethod: Session.HeartbeatDetectionMethod = .internalOnly
-
-    @State private var selectedAwarenessHinderTags: Set<String> = []
-    @State private var lastAwarenessSessionID: UUID? = nil
-    @State private var didAbortAwarenessDueToSignalLoss = false
-
-    // New AppStorage and local state for coach mark and heart button frame
-    @AppStorage("hasSeenDeviceCoachMark") private var hasSeenDeviceCoachMark: Bool = false
-    @State private var heartButtonFrame: CGRect = .zero
-    @State private var shouldShowCoachMark: Bool = false
-
-    // SwiftData
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Session.timestamp, order: .reverse)
-    private var sessions: [Session]
-    // End Swift Data
-    
-    private let successStreakNeeded = 2
-    private let awarenessSignalTimeout: TimeInterval = HeartBeatManager.defaultFreshHeartRateTimeout
-    
+    @Query(sort: \Session.timestamp, order: .reverse) private var sessions: [Session]
+    @Query(sort: \UserProfile.createdAt) private var profiles: [UserProfile]
+    @State private var showProfile = false
+
+    // MARK: - Helpers
+
     private var displayedHR: String {
         hr.heartRate.map(String.init) ?? "—"
     }
+
+    private static let lastReadingDateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateStyle = .short
+        df.timeStyle = .short
+        return df
+    }()
+
+    private var completedSessions: [Session] {
+        sessions.filter { $0.completionStatus == .completed }
+    }
+
+    private var weeklyTargetSessions: Int? {
+        guard let target = profiles.first?.targetSessionsPerWeek else { return nil }
+        return max(1, target)
+    }
+
+    private var completedSessionsThisWeek: Int {
+        let calendar = Calendar.current
+        let now = Date()
+        return completedSessions.filter {
+            calendar.isDate($0.timestamp, equalTo: now, toGranularity: .weekOfYear)
+        }.count
+    }
+
+    private var completedSessionStreakDays: Int {
+        let calendar = Calendar.current
+        let uniqueDays = Set(completedSessions.map { calendar.startOfDay(for: $0.timestamp) })
+        guard !uniqueDays.isEmpty else { return 0 }
+
+        var streak = 0
+        var cursor = calendar.startOfDay(for: Date())
+
+        if !uniqueDays.contains(cursor) {
+            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: cursor),
+                  uniqueDays.contains(yesterday) else {
+                return 0
+            }
+            cursor = yesterday
+        }
+
+        while uniqueDays.contains(cursor) {
+            streak += 1
+            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = previousDay
+        }
+
+        return streak
+    }
+
+    private var exploredContexts: Set<String> {
+        Set(
+            completedSessions.compactMap { session in
+                session.contextTags.first ?? session.baseContext ?? session.context
+            }
+        )
+    }
+
+    private var shouldShowRecurringDevicePrompt: Bool {
+        hr.lastUsedDeviceID == nil && !hr.isConnected
+    }
+
+    // MARK: - Toolbar Profile Icon
 
     @ViewBuilder
     private var toolbarProfileIcon: some View {
@@ -185,758 +173,178 @@ struct HomeDashboardView: View {
                 .frame(width: 28, height: 28)
         }
     }
-    
-    @Query(sort: \UserProfile.createdAt) private var profiles: [UserProfile]
-    @State private var showProfile = false
 
-    private enum AwarenessOutcome {
-        case completed(durationSec: Int, baseline: Int, endHR: Int)
-        case aborted
-    }
-
-    private enum AwarenessAbortReason {
-        case signalLost
-        case userRequested
-    }
-    
-    enum AwarenessColor {
-        static func forScore(_ score: Int) -> Color {
-            switch score {
-            case 90...100: return .green
-            case 80..<90:  return .mint
-            case 70..<80:  return .blue
-            case 55..<70:  return .orange
-            default:       return .red
-            }
-        }
-    }
-
-    private func pointsFromError(_ error: Int) -> Int {
-        // 0 error -> 100 pts, each bpm off -> -5 pts, floor at 0
-        return max(0, 100 - 5 * error)
-    }
-
-    private func startAwareness(baselineHR: Int, timeLimitSec: Int?) {
-        awarenessBaseline = baselineHR
-        activeTimeLimitSec = timeLimitSec
-        showAbortConfirm = false
-        showAwarenessSignalLossAlert = false
-        didAbortAwarenessDueToSignalLoss = false
-        lastAwarenessScore = nil
-        lastAwarenessCoachLine = nil
-        lastAwarenessDate = nil
-        lastAwarenessSessionID = nil
-
-        selectedAwarenessTags.removeAll()
-        selectedAwarenessHinderTags.removeAll()
-
-        elapsedSec = 0
-        isAwarenessRunning = true
-        isAwarenessPaused = false
-        awarenessSessionResult = ""
-        awarenessDeltaEstimate = 0
-        pendingAwarenessEndHR = nil
-        pendingAwarenessDurationSec = nil
-        pendingAwarenessEndedAt = nil
-
-        awarenessStartTime = Date()
-        awarenessHRSeries = [(time: 0, hr: baselineHR)]
-
-        timer?.invalidate()
-        let t = Timer(timeInterval: 1.0, repeats: true) { _ in
-            tickAwareness()
-        }
-        RunLoop.main.add(t, forMode: .common)
-        timer = t
-    }
-
-    private func requestStopAwareness() {
-        guard isAwarenessRunning else { return }
-        isAwarenessPaused = true
-        timer?.invalidate(); timer = nil
-        showAbortConfirm = true
-    }
-
-    private func abortAwareness() {
-        abortAwareness(reason: .userRequested)
-    }
-
-    private func abortAwareness(reason: AwarenessAbortReason) {
-        guard isAwarenessRunning || isAwarenessPaused else { return }
-
-        isAwarenessPaused = false
-        isAwarenessRunning = false
-        showAbortConfirm = false
-        timer?.invalidate()
-        timer = nil
-        activeTimeLimitSec = nil
-        awarenessSessionResult = "Aborted. Not saved."
-        awarenessBaseline = nil
-        awarenessStartTime = nil
-        elapsedSec = 0
-
-        if reason == .signalLost {
-            didAbortAwarenessDueToSignalLoss = true
-            if !showAwarenessSignalLossAlert {
-                showAwarenessSignalLossAlert = true
-            }
-        } else {
-            didAbortAwarenessDueToSignalLoss = false
-        }
-    }
-
-    private func handleHeartRateSignalLost() {
-        guard isAwarenessRunning || isAwarenessPaused else { return }
-        guard !didAbortAwarenessDueToSignalLoss else { return }
-        abortAwarenessDueToSignalLoss()
-    }
-
-    private func abortAwarenessDueToSignalLoss() {
-        abortAwareness(reason: .signalLost)
-    }
-
-    private func monitorAwarenessHeartRateSignal() {
-        guard isAwarenessRunning else { return }
-        guard !didAbortAwarenessDueToSignalLoss else { return }
-
-        if !hr.isConnectionActive || !hr.isHeartRateSignalFresh(within: awarenessSignalTimeout) {
-            handleHeartRateSignalLost()
-        }
-    }
-    
-    private func tickAwareness() {
-        guard isAwarenessRunning, !isAwarenessPaused else { return }
-        guard let baseline = awarenessBaseline, let start = awarenessStartTime else { return }
-        guard hr.isConnectionActive, hr.isHeartRateSignalFresh(within: awarenessSignalTimeout) else {
-            handleHeartRateSignalLost()
-            return
-        }
-
-        // Derive elapsed from wall clock for robustness against timer jitter
-        let t = max(0, Int(Date().timeIntervalSince(start)))
-        if t != elapsedSec { elapsedSec = t }
-
-        if let currentHR = hr.heartRate {
-            awarenessHRSeries.append((time: t, hr: currentHR))
-        }
-
-        if let limit = activeTimeLimitSec, t >= limit {
-            finishAwareness(outcome: .completed(
-                durationSec: t,
-                baseline: baseline,
-                endHR: hr.heartRate ?? baseline
-            ))
-            return
-        }
-
-        if let limit = activeTimeLimitSec {
-            awarenessSessionResult = "Observing heartbeat • \(t)s / \(limit)s"
-        } else {
-            awarenessSessionResult = "Observing heartbeat • \(t)s"
-        }
-    }
-    
-    private func finishAwareness(outcome: AwarenessOutcome) {
-        isAwarenessRunning = false
-        isAwarenessPaused = false
-        timer?.invalidate()
-        timer = nil
-
-        let generator = UINotificationFeedbackGenerator()
-
-        switch outcome {
-        case .aborted:
-            awarenessSessionResult = "Aborted. Not saved."
-            activeTimeLimitSec = nil
-            awarenessBaseline = nil
-            awarenessStartTime = nil
-            elapsedSec = 0
-            return
-
-        case .completed(durationSec: let timeSec,
-                        baseline: _,
-                        endHR: let endHR):
-            generator.notificationOccurred(.success)
-            AudioServicesPlaySystemSound(1013)
-
-            let duration = max(1, timeSec)
-            let endedAt = Date()
-            pendingAwarenessEndHR = endHR
-            pendingAwarenessDurationSec = duration
-            pendingAwarenessEndedAt = endedAt
-            awarenessSessionResult = "Session complete in \(duration)s"
-            showAwarenessDeltaEstimateSheet = true
-            showAwarenessSessionSheet = false
-        }
-
-        elapsedSec = 0
-        didAbortAwarenessDueToSignalLoss = false
-    }
-
-    private func submitAwarenessDeltaEstimate() {
-        guard let baseline = awarenessBaseline,
-              let endHR = pendingAwarenessEndHR,
-              let duration = pendingAwarenessDurationSec,
-              let endedAt = pendingAwarenessEndedAt else { return }
-
-        let metrics = AwarenessSessionEvaluator.evaluate(
-            series: awarenessHRSeries,
-            estimatedDeltaBpm: awarenessDeltaEstimate
-        )
-        let rawScore = metrics.map { ScoreCalculator.awarenessEstimateScore(error: $0.absoluteDeltaErrorBpm) } ?? 0
-        let score = ScoreCalculator.adjustedScore(
-            rawScore: rawScore,
-            detectionMethod: awarenessDetectionMethod
-        )
-        let awarenessModel = metrics.map(AwarenessSessionEvaluator.scoreAndNarrative)
-        let note = awarenessModel?.noteLine ?? "Your estimate has been saved."
-
-        lastAwarenessScore = score
-        lastAwarenessCoachLine = note
-        awarenessSessionResult = "Estimate submitted"
-        lastAwarenessDate = endedAt
-
-        if let session = saveAwarenessSession(
-            startedAt: awarenessStartTime,
-            endedAt: endedAt,
-            durationSec: duration,
-            baseline: baseline,
-            endHR: endHR,
-            estimatedDelta: awarenessDeltaEstimate,
-            rawScore: rawScore,
-            score: score,
-            noteLine: note
-        ) {
-            lastAwarenessSessionID = session.id
-        }
-
-        showAwarenessDeltaEstimateSheet = false
-        showAwarenessSessionResultsSheet = true
-        activeTimeLimitSec = nil
-        awarenessBaseline = nil
-        awarenessStartTime = nil
-        pendingAwarenessEndHR = nil
-        pendingAwarenessDurationSec = nil
-        pendingAwarenessEndedAt = nil
-    }
-    
-    private var awarenessSessionResultColor: Color {
-        guard let s = lastAwarenessScore else { return .secondary }
-        return AwarenessColor.forScore(s)
-    }
-    
-    @discardableResult
-    private func saveAwarenessSession(
-        startedAt: Date?,
-        endedAt: Date,
-        durationSec: Int,
-        baseline: Int,
-        endHR: Int,
-        estimatedDelta: Int,
-        rawScore: Int,
-        score: Int,
-        noteLine: String
-    ) -> Session? {
-        let measuredDelta = endHR - baseline
-        let signedDeltaError = estimatedDelta - measuredDelta
-        let absoluteDeltaError = abs(signedDeltaError)
-
-        let signalConfidence = hr.signalConfidence
-        let qualityFlag: Session.QualityFlag = {
-            guard hr.canUseCurrentReading else { return .low }
-            switch signalConfidence {
-            case .high: return .high
-            case .medium: return .medium
-            case .low, .unknown: return .medium
-            }
-        }()
-
-        let session = Session(
-            context: "Awareness Session",
-            estimate: estimatedDelta,
-            actualHR: measuredDelta,
-            error: absoluteDeltaError,
-            signedError: signedDeltaError,
-            score: score,
-            timestamp: endedAt,
-            startedAt: startedAt,
-            endedAt: endedAt,
-            durationSeconds: durationSec,
-            sessionType: .awarenessSession,
-            contextTags: [context],
-            notes: nil,
-            completionStatus: .completed,
-            qualityFlag: qualityFlag,
-            signalConfidence: signalConfidence,
-            samplingCount: awarenessHRSeries.count,
-            measurementDropouts: 0,
-            samplingQualityScore: qualityFlag == .high ? 100 : (qualityFlag == .medium ? 75 : 40),
-            deviceName: hr.connectedDeviceName,
-            deviceType: hr.deviceType,
-            deviceIdentifier: hr.deviceIdentifierString,
-            appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
-            scoringModelVersion: "2.1",
-            insightModelVersion: "1.0"
-        )
-
-        session.isAwarenessSession = true
-        session.awarenessSecondsValue = durationSec
-        session.baseContext = context
-        session.awarenessTags = selectedAwarenessTags.isEmpty ? nil : Array(selectedAwarenessTags).sorted()
-        session.awarenessHinderTags = selectedAwarenessHinderTags.isEmpty ? nil : Array(selectedAwarenessHinderTags).sorted()
-        session.awarenessCoachLine = noteLine
-
-        session.awarenessBaselineBpm = baseline
-        session.awarenessEndBpm = endHR
-        session.awarenessPlannedTimeLimitSec = awarenessUseTimeLimit ? awarenessTimeLimitSec : nil
-        session.awarenessUsedTimeLimitSec = activeTimeLimitSec ?? (awarenessUseTimeLimit ? awarenessTimeLimitSec : nil)
-        session.heartbeatDetectionMethod = awarenessDetectionMethod
-        session.normalizedAwarenessScore = Double(rawScore)
-        session.contextDifficultyAdjustedScore = Double(measuredDelta)
-
-        modelContext.insert(session)
-        try? modelContext.save()
-        InteroceptiveIndexEngine.recomputeFromSessions(context: modelContext)
-
-        return session
-    }
- 
-    // MARK: - Added helper for animated color for Quick Check resultText
-    private var resultTextColor: Color {
-        // Calculate color based on score if possible, else default secondary
-        if let points = extractScoreFromResultText() {
-            if points >= 80 {
-                return .green
-            } else if points >= 50 {
-                return .orange
-            } else {
-                return .red
-            }
-        }
-        return .secondary
-    }
-    
-    private func extractScoreFromResultText() -> Int? {
-        // Attempts to parse score from resultText string
-        // The resultText contains "Score: <points>" line.
-        let lines = resultText.components(separatedBy: "\n")
-        for line in lines {
-            if line.contains("Score:") {
-                let parts = line.components(separatedBy: "Score:")
-                if parts.count > 1 {
-                    let scoreString = parts[1].trimmingCharacters(in: .whitespaces)
-                    return Int(scoreString)
-                }
-            }
-        }
-        return nil
-    }
-    
-    // MARK: - DateFormatter for displaying last reading date/time
-    private static let lastReadingDateFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.dateStyle = .short
-        df.timeStyle = .short
-        return df
-    }()
-    
-    // MARK: - Toast helper
-    private func showToast(_ message: String) {
-        toastMessage = message
-        withAnimation(.spring()) { showToast = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            withAnimation(.easeOut) { showToast = false }
-        }
-    }
-    
-    // MARK: - Awareness helpers extracted
-    private var awarenessTitleRow: some View {
-            HStack(spacing: 8) {
-                Text("Awareness Session")
-                    .font(.headline)
-                Button {
-                    showAwarenessHelp = true
-                } label: {
-                    Image(systemName: "questionmark.circle")
-                        .font(.subheadline)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("What is Awareness Session?")
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
-        }
-
-    private var awarenessSubtitle: some View {
-        VStack(alignment: .center, spacing: 6) {
-            Text("How well can you perceive your heartbeat over time?")
-                .font(.footnote)
-                .foregroundStyle(AppColors.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .center)
-            Spacer()
-        }
-    }
-
-    private var awarenessSettingsSummary: some View {
-        EmptyView()
-    }
-
-    private var awarenessStartButton: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack (spacing: 8) {
-                Spacer()
-                Button {
-                    showAwarenessSessionSheet = true
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "hand.tap")
-                        Text("Start Awareness Session")
-                        .font(.headline)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AppColors.breathTeal)
-                .shadow(color: AppColors.breathTeal.opacity(0.5), radius: 6, x: 0, y: 3)
-                .disabled(!hr.canUseCurrentReading)
-                Spacer()
-            }
-            Spacer()
-            
-            if !hr.isConnected || !hr.isStreaming {
-                Text("Connect a Bluetooth heart rate device.")
-                    .font(.footnote)
-                    .foregroundStyle(AppColors.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
-        }
-    }
-
-    // MARK: - Chip helper for selectable tags
-    private func helperChip(tag: String) -> some View {
-        let latest = sessions.first(where: { $0.isAwareness }) //?? sessions.first(where: { $0.isAwareness })
-        let currentSet: Set<String> = Set(latest?.awarenessTags ?? [])
-        let isSelected = currentSet.contains(tag)
-        return Button {
-            // Toggle and persist immediately
-            var newSet = currentSet
-            if isSelected { newSet.remove(tag) } else { newSet.insert(tag) }
-            latest?.awarenessTags = newSet.isEmpty ? nil : Array(newSet).sorted()
-            do { try modelContext.save() } catch { /* handle if needed */ }
-    } label: {
-            HStack(spacing: 6) {
-                Text(tag)
-                    .font(.footnote)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-            }
-            .background(isSelected ? Color.accentColor.opacity(0.2) : AppColors.cardSurface)
-            .foregroundStyle(isSelected ? AppColors.accuracyAccent : AppColors.textPrimary)
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(isSelected ? AppColors.accuracyAccent : Color.secondary.opacity(0.4), lineWidth: 1)
-            )
-            .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-    
-    private func hinderChip(tag: String) -> some View {
-        // Determine selection from latest Awareness session if available
-        let latest = sessions.first(where: { $0.isAwareness }) //?? sessions.first(where: { $0.isAwareness })
-        let currentSet: Set<String> = Set(latest?.awarenessHinderTags ?? [])
-        let isSelected = currentSet.contains(tag)
-        return Button {
-            // Toggle and persist immediately
-            var newSet = currentSet
-            if isSelected { newSet.remove(tag) } else { newSet.insert(tag) }
-            latest?.awarenessHinderTags = newSet.isEmpty ? nil : Array(newSet).sorted()
-            do { try modelContext.save() } catch { /* handle if needed */ }
-        } label: {
-            HStack(spacing: 6) {
-                Text(tag)
-                    .font(.footnote)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-            }
-            .background(isSelected ? Color.accentColor.opacity(0.2) : AppColors.cardSurface)
-            .foregroundStyle(isSelected ? AppColors.awarenessAccent : AppColors.textPrimary)
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(isSelected ? AppColors.awarenessAccent : Color.secondary.opacity(0.4), lineWidth: 1)
-            )
-            .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
-    // Replace awarenessSessionResultsSection with empty view per instructions
-    private var awarenessSessionResultsSection: some View {
-        Group { EmptyView() }
-    }
-    
-    private var awarenessHelpSheet: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Text("• Awareness Session helps you observe how your heartbeat feels over a short period of time, then compare your estimate of that change with a measured heart-rate reference.\n\n• With repeated use, you may become more familiar with how heartbeat changes feel in different situations.\n\n• This feature is intended for general wellness and educational use only. It does not diagnose, treat, or monitor any medical condition.")
-                        .font(.subheadline)
-                        .foregroundStyle(AppColors.textSecondary)
-                }
-                .padding(20)
-            }
-            .navigationTitle("What is Awareness Session?")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(AppColors.screenBackground, for: .navigationBar)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showAwarenessHelp = false } } }
-        }
-        .background(AppColors.screenBackground.ignoresSafeArea())
-    }
+    // MARK: - Tabs
 
     private var pulseTab: some View {
-        Group {
-            Card {
-                HeartbeatEstimateCard(
-                    context: $context,
-                    estimateValue: $estimateValue,
-                    isEstimating: $isEstimating,
-                    resultText: $resultText,
-                    lastActionDate: $lastActionDate,
-                    isRevealed: $isRevealed,
-                    revealTask: $revealTask,
-                    showHeartbeatEstimateHelp: $showHeartbeatEstimateHelp,
-                    showHeartbeatEstimateSheet: $showHeartbeatEstimateSheet,
-                    heartbeatDetectionMethod: $heartbeatEstimateDetectionMethod,
-                    hr: hr,
-                    onSubmitEstimate: { estimate, actual, error, signedError in
-                        let session = Session(
-                            context: context,
-                            estimate: estimate,
-                            actualHR: actual,
-                            error: error,
-                            signedError: signedError,
-                            score: ScoreCalculator.performanceScoreV1(errors: [error]).score ?? 0
-                        )
-                        Task { @MainActor in
-                            modelContext.insert(session)
-                            try? modelContext.save()
-                            InteroceptiveIndexEngine.recomputeFromSessions(context: modelContext)
-                        }
-                    }
-                )
-            }
+        Card {
+            HeartbeatEstimateCard(
+                sense: sense,
+                coordinator: coordinator,
+                hr: hr
+            )
         }
     }
-    
+
     private var awarenessTab: some View {
-        Group {
-            Card {
-                AwarenessSessionCard(
-                    hr: hr,
-                    isAwarenessRunning: $isAwarenessRunning,
-                    isAwarenessPaused: $isAwarenessPaused,
-                    awarenessBaseline: $awarenessBaseline,
-                    awarenessStartTime: $awarenessStartTime,
-                    awarenessSessionResult: $awarenessSessionResult,
-                    showStopConfirm: $showStopConfirm,
-                    elapsedSec: $elapsedSec,
-                    timer: $timer,
-                    showAwarenessSessionSheet: $showAwarenessSessionSheet,
-                    awarenessUseTimeLimit: $awarenessUseTimeLimit,
-                    awarenessTimeLimitSec: $awarenessTimeLimitSec,
-                    activeTimeLimitSec: $activeTimeLimitSec,
-                    showAbortConfirm: $showAbortConfirm,
-                    showAwarenessSignalLossAlert: $showAwarenessSignalLossAlert,
-                    lastAwarenessScore: $lastAwarenessScore,
-                    lastAwarenessCoachLine: $lastAwarenessCoachLine,
-                    showAwarenessSessionResultsSheet: $showAwarenessSessionResultsSheet,
-                    showAwarenessDeltaEstimateSheet: $showAwarenessDeltaEstimateSheet,
-                    showAwarenessHelp: $showAwarenessHelp,
-                    awarenessDeltaEstimate: $awarenessDeltaEstimate,
-                    heartbeatDetectionMethod: $awarenessDetectionMethod,
-                    selectedAwarenessTags: $selectedAwarenessTags,
-                    selectedAwarenessHinderTags: $selectedAwarenessHinderTags,
-                    awarenessHelpTags: awarenessHelpTags,
-                    awarenessHinderTags: awarenessHinderTags,
-                    awarenessHRSeries: $awarenessHRSeries,
-                    context: $context,
-                    lastAwarenessDate: $lastAwarenessDate,
-                    lastAwarenessSessionID: $lastAwarenessSessionID,
-                    lastActionDate: $lastActionDate,
-                    pendingAwarenessDurationSec: $pendingAwarenessDurationSec,
-                    pendingAwarenessEndHR: $pendingAwarenessEndHR,
-                    onSubmitAwarenessEstimate: { submitAwarenessDeltaEstimate() },
-                    showToast: { showToast($0) },
-                    awarenessTitleRow: AnyView(awarenessTitleRow),
-                    awarenessSubtitle: AnyView(awarenessSubtitle),
-                    awarenessSettingsSummary: AnyView(awarenessSettingsSummary),
-                    awarenessStartButton: AnyView(awarenessStartButton),
-                    awarenessHelpSheet: AnyView(awarenessHelpSheet)
-                )
-            }
+        Card {
+            AwarenessSessionCard(
+                awareness: awareness,
+                coordinator: coordinator,
+                hr: hr,
+                modelContext: modelContext
+            )
         }
     }
+
+    // MARK: - Body
 
     var body: some View {
-        
+
         ZStack {
-            NavigationStack {
-                ScrollView {
-                    VStack(spacing: 14) {
-                        InteroceptiveIndexHeader()
-                            .padding(.bottom, 2)
-                        VStack(spacing: 8) {
-                            FlippableLiveHRCard(
-                                hr: hr,
-                                isRevealed: isRevealed,
-                                isAwarenessRunning: isAwarenessRunning
-                            )
-
-                            Text("Current HR (bpm)")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(AppColors.textSecondary)
-                        }
-
-                        pulseTab
-                        awarenessTab
-                    }
-                    .onTapGesture {
-                        isEstimating = false
-                    }
-                    .padding(.bottom, 12)
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    sense.isEstimating = false
                 }
-                .ignoresSafeArea(.keyboard, edges: .bottom)
-                .overlay(alignment: .top) {
-                    if showToast, let msg = toastMessage {
-                        Text(msg)
-                            .font(.subheadline)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(AppColors.cardSurface)
-                            .clipShape(Capsule())
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                            .padding(.top, 8)
-                    }
-                }
-                .navigationTitle("InteroHB")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(AppColors.screenBackground, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            showProfile = true
-                        } label: {
-                            toolbarProfileIcon
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Open Profile")
-                    }
 
-                    ToolbarItem(placement: .topBarTrailing) {
-                        // Streaming reflects live HR updates from the device
-                        let isStreaming = hr.isStreaming
-                        // Connected but not currently streaming a signal
-                        let isConnectedNotStreaming = hr.isConnected && !hr.isStreaming
-
-                        PulsingHeartButton(
-                            isStreaming: isStreaming,
-                            isConnectedNoSignal: isConnectedNotStreaming,
-                            // Pulse whenever attention is needed: disconnected or connected without signal.
-                            isPulsing: !hr.isConnected || isConnectedNotStreaming,
-                            onTap: { showDevicesSheet = true }
+            ScrollView {
+                VStack(spacing: 14) {
+                    InteroceptiveIndexHeader()
+                        .padding(.bottom, 2)
+                    HomeTrainingProgressCard(
+                        completedThisWeek: completedSessionsThisWeek,
+                        weeklyTarget: weeklyTargetSessions,
+                        streakDays: completedSessionStreakDays,
+                        totalCompletedSessions: completedSessions.count,
+                        hasProfile: profiles.first != nil,
+                        onSetGoal: { showProfile = true }
+                    )
+                    ContextsExploredCard(
+                        exploredContexts: exploredContexts,
+                        allContexts: AppContexts.all
+                    )
+                    VStack(spacing: 8) {
+                        FlippableLiveHRCard(
+                            hr: hr,
+                            isRevealed: sense.isRevealed,
+                            isAwarenessRunning: awareness.isRunning
                         )
-                        // Capture the heart button frame for spotlight positioning
-                        .onPreferenceChange(HeartButtonFramePreferenceKey.self) { newFrame in
-                            heartButtonFrame = newFrame
-                        }
+
+                        Text("Current HR (bpm)")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(AppColors.textSecondary)
                     }
 
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Spacer()
-                        Button("Done") {
-                            isEstimating = false
-                        }
-                    }
+                    pulseTab
+                    awarenessTab
                 }
-                .background(AppColors.screenBackground.ignoresSafeArea())
-                .navigationDestination(isPresented: $showProfile) {
-                    ProfileView()
+                .padding(.bottom, 12)
+            }
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+            .overlay(alignment: .top) {
+                if coordinator.isShowingToast, let msg = coordinator.toastMessage {
+                    Text(msg)
+                        .font(.subheadline)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(AppColors.cardSurface)
+                        .clipShape(Capsule())
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .padding(.top, 8)
                 }
             }
-            .sheet(isPresented: $showDevicesSheet) {
+            .navigationTitle("InteroHB")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(AppColors.screenBackground, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showProfile = true
+                    } label: {
+                        toolbarProfileIcon
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open Profile")
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    let isStreaming = hr.isStreaming
+                    let isConnectedNotStreaming = hr.isConnected && !hr.isStreaming
+
+                    PulsingHeartButton(
+                        isStreaming: isStreaming,
+                        isConnectedNoSignal: isConnectedNotStreaming,
+                        isPulsing: !hr.isConnected || isConnectedNotStreaming,
+                        onTap: { coordinator.showDevicesSheet = true }
+                    )
+                    .onPreferenceChange(HeartButtonFramePreferenceKey.self) { newFrame in
+                        coordinator.heartButtonFrame = newFrame
+                    }
+                }
+
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        sense.isEstimating = false
+                    }
+                }
+            }
+            .background(AppColors.screenBackground.ignoresSafeArea())
+            .navigationDestination(isPresented: $showProfile) {
+                ProfileView()
+            }
+            .sheet(isPresented: $coordinator.showDevicesSheet) {
                 DeviceSheet(
                     hr: hr,
-                    hasScannedDevices: $hasScannedDevices,
-                    lastDeviceName: $lastDeviceName
+                    hasScannedDevices: $coordinator.hasScannedDevices,
+                    lastDeviceName: $coordinator.lastDeviceName
                 ) {
-                    showDevicesSheet = false
+                    coordinator.showDevicesSheet = false
                 }
             }
             .onDisappear {
-                revealTask?.cancel()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("AwarenessStart"))) { note in
-                if let userInfo = note.userInfo as? [String: Any],
-                   let baseline = userInfo["baseline"] as? Int {
-                    let timeLimitRaw = userInfo["timeLimit"] as? Int
-                    let timeLimit = (timeLimitRaw ?? 0) > 0 ? timeLimitRaw : nil
-                    startAwareness(baselineHR: baseline, timeLimitSec: timeLimit)
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("AwarenessTick"))) { _ in
-                tickAwareness()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("AwarenessAbort"))) { _ in
-                abortAwareness()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("AwarenessFinish"))) { _ in
-                guard let baseline = awarenessBaseline else { return }
-                finishAwareness(outcome: .completed(
-                    durationSec: elapsedSec,
-                    baseline: baseline,
-                    endHR: hr.heartRate ?? baseline
-                ))
+                sense.cancelRevealTask()
             }
             .onReceive(Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()) { _ in
-                monitorAwarenessHeartRateSignal()
+                awareness.monitorSignal(hr: hr)
             }
             .onChange(of: hr.isConnected) { _, newValue in
                 if !newValue {
-                    handleHeartRateSignalLost()
+                    coordinator.handleConnectionLost(awareness: awareness)
                 }
                 if newValue {
-                    shouldShowCoachMark = false
+                    coordinator.handleConnectionRestored()
                 }
             }
             .onChange(of: hr.isStreaming) { _, newValue in
                 if !newValue {
-                    handleHeartRateSignalLost()
+                    coordinator.handleStreamingLost(awareness: awareness)
                 }
             }
-            
-            // Coach mark overlay: show once for first-time users without a connected device
-            if shouldShowCoachMark, !hasSeenDeviceCoachMark, !hr.isConnected, heartButtonFrame != .zero {
+
+            // Coach mark overlay
+            if coordinator.shouldShowCoachMark, shouldShowRecurringDevicePrompt, coordinator.heartButtonFrame != .zero {
                 DeviceCoachMarkOverlay(
-                    targetFrame: heartButtonFrame,
+                    targetFrame: coordinator.heartButtonFrame,
                     onConnect: {
-                        hasSeenDeviceCoachMark = true
-                        showDevicesSheet = true
-                        shouldShowCoachMark = false
+                        coordinator.showDevicesSheet = true
+                        coordinator.shouldShowCoachMark = false
                     },
                     onLater: {
-                        hasSeenDeviceCoachMark = true
-                        shouldShowCoachMark = false
+                        coordinator.shouldShowCoachMark = false
                     }
                 )
                 .transition(.opacity)
             }
         }
         .onAppear {
-            // Delay slightly so layout has stabilized
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                if !hasSeenDeviceCoachMark && !hr.isConnected {
-                    shouldShowCoachMark = true
-                }
+                coordinator.checkCoachMark(
+                    hasConnectedDeviceBefore: hr.lastUsedDeviceID != nil,
+                    isConnected: hr.isConnected
+                )
             }
         }
     }
@@ -962,6 +370,167 @@ struct InteroceptiveIndexSummaryCard: View {
         .padding()
     }
 }
+
+private struct HomeTrainingProgressCard: View {
+    let completedThisWeek: Int
+    let weeklyTarget: Int?
+    let streakDays: Int
+    let totalCompletedSessions: Int
+    let hasProfile: Bool
+    let onSetGoal: () -> Void
+
+    private var progress: Double {
+        guard let weeklyTarget else { return 0 }
+        return min(1, Double(completedThisWeek) / Double(max(1, weeklyTarget)))
+    }
+
+    private var remainingSessions: Int {
+        guard let weeklyTarget else { return 0 }
+        return max(0, weeklyTarget - completedThisWeek)
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .stroke(AppColors.gaugeTrack, lineWidth: 8)
+
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(
+                        AppColors.breathTeal,
+                        style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+
+                VStack(spacing: 1) {
+                    Text("\(completedThisWeek)")
+                        .font(.headline.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(AppColors.textPrimary)
+                    if let weeklyTarget {
+                        Text("of \(weeklyTarget)")
+                            .font(.caption2)
+                            .foregroundStyle(AppColors.textSecondary)
+                    } else {
+                        Text("goal")
+                            .font(.caption2)
+                            .foregroundStyle(AppColors.textSecondary)
+                    }
+                }
+            }
+            .frame(width: 62, height: 62)
+
+            VStack(alignment: .leading, spacing: 4) {
+                if let weeklyTarget {
+                    Text("\(completedThisWeek) of \(weeklyTarget) sessions this week")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColors.textPrimary)
+
+                    Text(remainingSessions == 0 ? "Weekly goal reached." : "\(remainingSessions) more to hit your weekly goal.")
+                        .font(.caption)
+                        .foregroundStyle(AppColors.textSecondary)
+                } else {
+                    Text("Set a weekly goal")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColors.textPrimary)
+
+                    Text(hasProfile ? "Set up a weekly goal in Profile to track your progress here." : "Create a profile and set up a weekly goal to track your progress here.")
+                        .font(.caption)
+                        .foregroundStyle(AppColors.textSecondary)
+
+                    Button("Open Profile") {
+                        onSetGoal()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AppColors.breathTeal)
+                }
+
+                HStack(spacing: 12) {
+                    Label("\(streakDays)d streak", systemImage: "flame.fill")
+                        .foregroundStyle(streakDays > 0 ? AppColors.pulseCoral : AppColors.textMuted)
+
+                    Label("\(totalCompletedSessions) total", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(AppColors.breathTeal)
+                }
+                .font(.caption.weight(.medium))
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .background(AppColors.cardSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+private struct ContextsExploredCard: View {
+    let exploredContexts: Set<String>
+    let allContexts: [String]
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 10),
+        GridItem(.flexible(), spacing: 10),
+        GridItem(.flexible(), spacing: 10)
+    ]
+
+    private var exploredCount: Int {
+        allContexts.filter { exploredContexts.contains($0) }.count
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Contexts Explored")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColors.textPrimary)
+
+                    Text("\(exploredCount) of \(allContexts.count) discovered")
+                        .font(.caption)
+                        .foregroundStyle(AppColors.textSecondary)
+                }
+
+                Spacer()
+
+                Text(exploredCount == allContexts.count ? "Complete" : "Discovery")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppColors.breathTeal)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(AppColors.breathTeal.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+
+            LazyVGrid(columns: columns, spacing: 10) {
+                ForEach(allContexts, id: \.self) { context in
+                    let isExplored = exploredContexts.contains(context)
+
+                    VStack(spacing: 6) {
+                        Image(systemName: isExplored ? "checkmark.seal.fill" : "circle.dashed")
+                            .font(.subheadline)
+                            .foregroundStyle(isExplored ? AppColors.breathTeal : AppColors.textMuted)
+
+                        Text(context)
+                            .font(.caption.weight(.medium))
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(isExplored ? AppColors.textPrimary : AppColors.textSecondary)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 66)
+                    .padding(.horizontal, 6)
+                    .background(isExplored ? AppColors.cardBackground : AppColors.gaugeTrack.opacity(0.35))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+            }
+        }
+        .padding(14)
+        .background(AppColors.cardSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+    }
+}
+
 struct InteroceptiveIndexHeader: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \IndexState.lastUpdated, order: .reverse) private var states: [IndexState]

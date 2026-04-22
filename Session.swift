@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftData
+import SwiftUI
 
 @Model
 final class Session {
@@ -54,6 +55,8 @@ final class Session {
     var baseContext: String? = nil
     var awarenessTags: [String]? = nil
     var awarenessHinderTags: [String]? = nil
+    var senseTags: [String]? = nil
+    var senseHinderTags: [String]? = nil
     var awarenessCoachLine: String? = nil
 
     // Awareness details
@@ -65,7 +68,7 @@ final class Session {
     var awarenessTimeToTargetSec: Int? = nil
     var awarenessSuccess: Bool? = nil
 
-    // Heartbeat Estimate metadata
+    // Sense metadata
     var heartbeatEstimationMethodRaw: String? = nil
     var heartbeatTimedDurationSeconds: Int? = nil
     var heartbeatDetectionMethodRaw: String? = nil
@@ -84,8 +87,8 @@ final class Session {
 
         var label: String {
             switch self {
-            case .heartbeatEstimate: return "Heartbeat Estimate"
-            case .awarenessSession: return "Awareness Session"
+            case .heartbeatEstimate: return "Sense"
+            case .awarenessSession: return "Flow"
             }
         }
     }
@@ -106,7 +109,7 @@ final class Session {
         var label: String {
             switch self {
             case .internalOnly:
-                return "Detected calmly"
+                return "Interoception only"
             case .pulsePointTouch:
                 return "Felt pulse point"
             }
@@ -299,6 +302,8 @@ final class Session {
         self.baseContext = nil
         self.awarenessTags = nil
         self.awarenessHinderTags = nil
+        self.senseTags = nil
+        self.senseHinderTags = nil
         self.awarenessCoachLine = nil
         self.awarenessBaselineBpm = nil
         self.awarenessEndBpm = nil
@@ -316,5 +321,104 @@ final class Session {
         self.normalizedAwarenessScore = nil
         self.contextDifficultyAdjustedScore = nil
         self.isDebugSeeded = isDebugSeeded
+    }
+}
+
+enum SessionReflectionTags {
+    static let helpful = [
+        "Breathing",
+        "Eyes closed",
+        "Posture",
+        "Mind quiet",
+        "Environment",
+        "Other"
+    ]
+
+    static let hinder = [
+        "External Noise",
+        "Session Interrupted",
+        "Couldn't focus",
+        "Too rushed",
+        "Too tired",
+        "Breathing felt off",
+        "Uncomfortable position",
+        "Other"
+    ]
+}
+
+struct SessionTagChip: View {
+    let text: String
+    let isHelpful: Bool
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(isHelpful ? AppColors.helpedTagBackground.opacity(0.12) : AppColors.hinderTagBackground.opacity(0.12))
+            .foregroundStyle(isHelpful ? AppColors.helpedTagForeground : AppColors.hinderTagForeground)
+            .clipShape(Capsule())
+    }
+}
+
+struct SessionTagFlowLayout: View {
+    let tags: [String]
+    let helpful: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(tags, id: \.self) { tag in
+                SessionTagChip(text: tag, isHelpful: helpful)
+            }
+        }
+    }
+}
+
+struct SelectableSessionTagRow: View {
+    let text: String
+    let isSelected: Bool
+    let isHelpful: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(iconColor)
+                    .padding(.top, 1)
+
+                Text(text)
+                    .font(.footnote)
+                    .foregroundStyle(AppColors.textPrimary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .background(backgroundColor)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(borderColor, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var backgroundColor: Color {
+        guard isSelected else { return AppColors.cardSurface }
+        return isHelpful ? AppColors.helpedTagBackground : AppColors.hinderTagBackground
+    }
+
+    private var borderColor: Color {
+        guard isSelected else { return AppColors.chartGrid }
+        return isHelpful
+            ? AppColors.helpedTagForeground.opacity(0.35)
+            : AppColors.hinderTagForeground.opacity(0.35)
+    }
+
+    private var iconColor: Color {
+        guard isSelected else { return AppColors.textMuted }
+        return isHelpful ? AppColors.helpedTagForeground : AppColors.hinderTagForeground
     }
 }

@@ -12,8 +12,6 @@ import Charts
 struct TrendsView: View {
     @EnvironmentObject private var purchaseManager: PurchaseManager
     @Environment(\.modelContext) private var modelContext
-    @State private var showPaywall = false
-    @State private var isPreparingPaywall = false
     @State private var selectedPage = 0
     @State private var hasSwipedMetrics = false
 
@@ -46,7 +44,7 @@ struct TrendsView: View {
                             .tag(0)
 
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Heartbeat Estimate")
+                                Text("Sense")
                                     .font(.headline)
                                     .frame(maxWidth: .infinity, alignment: .center)
                                     .padding(.horizontal)
@@ -58,7 +56,7 @@ struct TrendsView: View {
                             .tag(1)
 
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Awareness Session")
+                                Text("Flow")
                                     .font(.headline)
                                     .frame(maxWidth: .infinity, alignment: .center)
                                     .padding(.horizontal)
@@ -126,52 +124,11 @@ struct TrendsView: View {
                 .background(AppColors.screenBackground.ignoresSafeArea())
             }
             else {
-                VStack(spacing: 16) {
-                    Text("Trends are available to Premium users.")
-                        .foregroundStyle(AppColors.textPrimary)
-                    
-                    Button {
-                        Task { await presentPaywall() }
-                    } label: {
-                        paywallButtonLabel(paywallButtonTitle)
-                    }
-                    .disabled(isPreparingPaywall)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 12)
-                    .background(AppColors.breathTeal)
-                    .foregroundStyle(.white)
-                    .clipShape(Capsule())
-                }
+                PremiumUpsellView(message: "Trends are available to Premium users.")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(AppColors.screenBackground.ignoresSafeArea())
             }
         }
-        .sheet(isPresented: $showPaywall) {
-            PremiumPaywallView()
-        }
-    }
-
-    private func presentPaywall() async {
-        guard !isPreparingPaywall else { return }
-
-        isPreparingPaywall = true
-        _ = await purchaseManager.ensureProductsLoaded()
-        isPreparingPaywall = false
-        showPaywall = true
-    }
-
-    @ViewBuilder
-    private func paywallButtonLabel(_ title: String) -> some View {
-        if isPreparingPaywall {
-            ProgressView()
-                .tint(.white)
-        } else {
-            Text(title)
-        }
-    }
-
-    private var paywallButtonTitle: String {
-        purchaseManager.isEligibleForIntroOffer ? "Start Free Trial" : "Upgrade Now"
     }
 
 #if DEBUG

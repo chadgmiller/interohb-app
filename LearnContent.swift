@@ -24,7 +24,7 @@ enum LearnContentStore {
         LearnSection(id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
                      title: "What is interoception?",
                      body: """
-Interoception is the awareness of internal body signals, such as heartbeat, breathing, temperature, and muscle tension.
+Interoception is the awareness of internal body signals, such as heartbeat, breathing, temperature, and emotions.
 
 It can be part of how people notice bodily sensations in everyday life.
 
@@ -43,70 +43,83 @@ The goal of this app is to support observation, reflection, and general wellness
         LearnSection(id: UUID(uuidString: "22222222-2222-2222-2222-222222222221")!,
                      title: "The process",
                      body: """
-1) Estimate your heartbeat
+1) Practice Sense
 2) View the measured heart-rate reference
 3) See the difference between the two
 4) Track sessions over time
-5) Practice heartbeat awareness sessions
+5) Practice Flow sessions
 
 These features are designed for general wellness, self-observation, and educational use.
 """),
         LearnSection(id: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
                      title: "Two areas of practice",
                      body: """
-Heartbeat Estimate: estimating your heartbeat and comparing it with a measured heart-rate reference
-Awareness Session: noticing your heartbeat during a session and comparing it with the measured heart-rate reference
+Sense: noticing and counting your heartbeat then comparing it with a measured heart-rate reference
+Flow: noticing your heartbeat change over time and comparing it with the measured heart-rate reference
+"""),
+        LearnSection(id: UUID(uuidString: "22222222-2222-2222-2222-222222222223")!,
+                     title: "Why there is a short cooldown",
+                     body: """
+After you submit a Sense session or begin a new Flow session, InteroHB uses a short cooldown before another entry can start.
+
+The goal is to keep your practice history cleaner by separating distinct attempts instead of stacking repeated back-to-back entries that do not add much useful information.
+
+Think of it as a brief reset period between practice sessions rather than a penalty.
 """)
     ]
 
     static let estimatingHB: [LearnSection] = [
         LearnSection(id: UUID(uuidString: "33333333-3333-3333-3333-333333333331")!,
-                     title: "Body cues to notice before estimating",
+                     title: "How to detect your heartbeat",
                      body: """
-• breathing depth and rhythm
-• warmth in the chest or face
-• jaw or shoulder tension
-• heartbeat sensations you may notice
-• where the heartbeat feels easiest to notice
+• sit still for a moment before you begin
+• notice where the heartbeat feels easiest to detect, such as the chest, throat, or torso
+• relax your jaw, shoulders, and hands so body tension does not mask the sensation
+• let your breathing settle instead of forcing a deeper breath
+• wait briefly for a clearer internal pulse sensation before you start counting
 """),
         LearnSection(id: UUID(uuidString: "33333333-3333-3333-3333-333333333332")!,
-                     title: "Common habits to watch for",
+                     title: "Counting tips",
                      body: """
-• guessing too quickly
-• estimating right after movement
-• estimating while holding your breath
-• choosing the same numbers out of habit
+• count each heartbeat once in a steady rhythm
+• avoid rushing to a number before the sensation feels clear
+• if you lose track, pause and restart instead of guessing
+• try not to hold your breath while counting
+• keep your attention on the internal sensation rather than repeating a familiar number
 """),
         LearnSection(id: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
-                     title: "A simple technique",
+                     title: "A simple Sense routine",
                      body: """
 Take one slow inhale and a longer exhale.
-Then estimate your heartbeat.
+Wait for the heartbeat sensation to feel clearer.
+Then count carefully and enter your best estimate.
 
-This can help create a steadier moment for the exercise.
+This can create a steadier moment for Sense.
 """)
     ]
 
     static let awareness: [LearnSection] = [
         LearnSection(id: UUID(uuidString: "44444444-4444-4444-4444-444444444441")!,
-                     title: "Awareness basics",
+                     title: "How to monitor change over time",
                      body: """
 • breathe comfortably
 • stay still if possible
-• relax your jaw and shoulders
-• reduce distractions if possible
-• stay gentle and avoid forcing the exercise
+• relax your jaw and shoulders so changes in heartbeat feel easier to notice
+• pay attention to whether the heartbeat feels faster, slower, stronger, or softer as time passes
+• reduce distractions so you can notice gradual shifts
+• stay gentle and avoid trying to force the heartbeat to change
 """),
         LearnSection(id: UUID(uuidString: "44444444-4444-4444-4444-444444444442")!,
-                     title: "If the session feels difficult",
+                     title: "If Flow feels unclear",
                      body: """
 Try one change at a time:
 1) adjust your posture
 2) reduce distractions
-3) lower mental effort
+3) shorten the session and focus only on whether the heartbeat is changing
 4) choose a quieter environment
+5) compare the beginning of the session with the end instead of judging every second
 
-You can note what felt most helpful in different situations.
+You can note what helped you track heartbeat changes more clearly in different situations.
 """)
     ]
 
@@ -141,8 +154,8 @@ If you have health concerns or symptoms, consult a qualified healthcare professi
 enum LearnTopic: String, CaseIterable, Identifiable {
     case interoception = "Interoception"
     case howItWorks = "How It Works"
-    case estimatingHB = "Estimating HB"
-    case awareness = "Awareness"
+    case estimatingHB = "Sense"
+    case awareness = "Flow"
     case calibration = "Calibration"
     case safety = "Important"
 

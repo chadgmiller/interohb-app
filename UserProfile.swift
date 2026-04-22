@@ -37,8 +37,7 @@ final class UserProfile {
     // Future-facing personalization
     var experienceLevel: ExperienceLevel
     var primaryGoal: PrimaryGoal
-    var preferredCoachingTone: CoachingTone
-    var targetSessionsPerWeek: Int
+    var targetSessionsPerWeek: Int?
     var restingHRBaseline: Int?
     var allowPersonalizedInsights: Bool
     var allowAIInsightGeneration: Bool
@@ -62,8 +61,7 @@ final class UserProfile {
         avatarImageData: Data? = nil,
         experienceLevel: ExperienceLevel = .beginner,
         primaryGoal: PrimaryGoal = .awareness,
-        preferredCoachingTone: CoachingTone = .encouraging,
-        targetSessionsPerWeek: Int = 4,
+        targetSessionsPerWeek: Int? = nil,
         restingHRBaseline: Int? = nil,
         allowPersonalizedInsights: Bool = true,
         allowAIInsightGeneration: Bool = false,
@@ -84,7 +82,6 @@ final class UserProfile {
         self.avatarImageData = avatarImageData
         self.experienceLevel = experienceLevel
         self.primaryGoal = primaryGoal
-        self.preferredCoachingTone = preferredCoachingTone
         self.targetSessionsPerWeek = targetSessionsPerWeek
         self.restingHRBaseline = restingHRBaseline
         self.allowPersonalizedInsights = allowPersonalizedInsights
@@ -174,22 +171,6 @@ enum PrimaryGoal: String, Codable, CaseIterable, Identifiable {
         case .focus: return "Strengthen steadiness and concentration."
         case .readiness: return "Observe how your state changes over time."
         case .performance: return "Train interoception to support performance."
-        }
-    }
-}
-
-enum CoachingTone: String, Codable, CaseIterable, Identifiable {
-    case encouraging
-    case neutral
-    case direct
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .encouraging: return "Encouraging"
-        case .neutral: return "Neutral"
-        case .direct: return "Direct"
         }
     }
 }

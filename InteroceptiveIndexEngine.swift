@@ -42,7 +42,7 @@ enum InteroceptiveIndexEngine {
 
             state.overallIndex = ema(new: result.indexRaw, old: state.overallIndex, alpha: alpha)
             state.dataConfidence = result.dataConfidence
-            state.scoringModelVersion = "2.0"
+            state.scoringModelVersion = "3.0"
             state.windowStart = result.windowStart
             state.windowEnd = result.windowEnd
             state.lastUpdated = effectiveDate ?? .now

@@ -135,6 +135,7 @@ struct PremiumPaywallView: View {
                     .font(.footnote)
                     .foregroundStyle(.red)
             }
+
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()

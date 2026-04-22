@@ -8,19 +8,9 @@
 import SwiftUI
 
 struct HeartbeatEstimateCard: View {
-    @Binding var context: String
-    @Binding var estimateValue: Double
-    @Binding var isEstimating: Bool
-    @Binding var resultText: String
-    @Binding var lastActionDate: Date?
-    @Binding var isRevealed: Bool
-    @Binding var revealTask: Task<Void, Never>?
-    @Binding var showHeartbeatEstimateHelp: Bool
-    @Binding var showHeartbeatEstimateSheet: Bool
-    @Binding var heartbeatDetectionMethod: Session.HeartbeatDetectionMethod
-
-    let hr: HeartBeatManager
-    let onSubmitEstimate: (_ estimate: Int, _ actual: Int, _ error: Int, _ signedError: Int) -> Void
+    @Bindable var sense: SenseSessionModel
+    @Bindable var coordinator: HomeDashboardCoordinator
+    @ObservedObject var hr: HeartBeatManager
 
     @State private var showResultsSheet: Bool = false
     @State private var lastPulseSession: Session? = nil
@@ -28,22 +18,22 @@ struct HeartbeatEstimateCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text("Heartbeat Estimate")
+                Text("Sense")
                     .font(.headline)
 
                 Button {
-                    showHeartbeatEstimateHelp = true
+                    sense.showHelp = true
                 } label: {
                     Image(systemName: "questionmark.circle")
                         .font(.subheadline)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("What is Heartbeat Estimate?")
+                .accessibilityLabel("What is Sense?")
             }
             .frame(maxWidth: .infinity, alignment: .center)
 
             VStack(alignment: .center, spacing: 6) {
-                Text("How well can you estimate your current heartbeat?")
+                Text("Detect and count your heartbeat now")
                     .font(.footnote)
                     .foregroundStyle(AppColors.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -52,11 +42,11 @@ struct HeartbeatEstimateCard: View {
             Spacer()
 
             Button {
-                showHeartbeatEstimateSheet = true
+                sense.showSheet = true
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "hand.tap")
-                    Text("Start Heartbeat Estimate")
+                    Text("Start Sense")
                         .font(.headline)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -76,29 +66,21 @@ struct HeartbeatEstimateCard: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .fullScreenCover(isPresented: $showHeartbeatEstimateHelp) {
+        .fullScreenCover(isPresented: $sense.showHelp) {
             HeartbeatEstimateHelpScreen {
-                showHeartbeatEstimateHelp = false
+                sense.showHelp = false
             }
         }
-        .sheet(isPresented: $showHeartbeatEstimateSheet) {
+        .sheet(isPresented: $sense.showSheet) {
             HeartbeatEstimateSheet(
-                context: $context,
-                estimateValue: $estimateValue,
-                isEstimating: $isEstimating,
-                resultText: $resultText,
-                lastActionDate: $lastActionDate,
-                isRevealed: $isRevealed,
-                revealTask: $revealTask,
-                showHeartbeatEstimateSheet: $showHeartbeatEstimateSheet,
-                heartbeatDetectionMethod: $heartbeatDetectionMethod,
-                hr: hr,
-                setCooldownTimer: { _ in }
+                sense: sense,
+                coordinator: coordinator,
+                hr: hr
             )
             .onPreferenceChange(SubmittedSessionPreferenceKey.self) { submitted in
                 guard let submitted else { return }
                 lastPulseSession = submitted
-                showHeartbeatEstimateSheet = false
+                sense.showSheet = false
 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     showResultsSheet = true
@@ -122,13 +104,17 @@ struct HeartbeatEstimateHelpScreen: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text("• Heartbeat Estimate is a guided wellness exercise that helps you estimate your heartbeat, then compare that estimate with a measured heart-rate reference from a connected fitness device.\n\n• Through repeated practice, you may become more familiar with how your heartbeat feels and how your estimates compare over time.\n\n• Your personalized Interoceptive Index is updated after each eligible Heartbeat Estimate session.\n\n• This feature is intended for general wellness and educational use only. It does not diagnose, treat, or monitor any medical condition.\n\n• This feature is intended to support body awareness, self-observation, and general wellness. Individual experiences may vary.")
+                    Text("Sense helps you practice Interoception by noticing and counting your heartbeat, then comparing your estimate with a measured heart-rate reference from a connected fitness device.")
+                        .font(.subheadline)
+                        .foregroundStyle(AppColors.textSecondary)
+
+                    Text("Through repeated practice, you may become more familiar with how your heartbeat feels and how your estimates compare over time.\n\nYour personalized Interoceptive Index is updated after each eligible Sense session.\n\nThis feature is intended for general wellness and educational use only. It does not diagnose, treat, or monitor any medical condition.")
                         .font(.subheadline)
                         .foregroundStyle(AppColors.textSecondary)
                 }
                 .padding(20)
             }
-            .navigationTitle("What is Heartbeat Estimate?")
+            .navigationTitle("What is Sense?")
             .navigationBarTitleDisplayMode(.inline)
             .background(AppColors.screenBackground.ignoresSafeArea())
             .toolbarBackground(AppColors.screenBackground, for: .navigationBar)
@@ -144,31 +130,11 @@ struct HeartbeatEstimateHelpScreen: View {
 }
 
 #Preview {
-    @Previewable @State var context: String = AppContexts.defaultSelection
-    @Previewable @State var estimateValue: Double = 70
-    @Previewable @State var isEstimating: Bool = false
-    @Previewable @State var resultText: String = ""
-    @Previewable @State var lastActionDate: Date? = nil
-    @Previewable @State var isRevealed: Bool = true
-    @Previewable @State var revealTask: Task<Void, Never>? = nil
-    @Previewable @State var showHeartbeatEstimateHelp: Bool = false
-    @Previewable @State var showHeartbeatEstimateSheet: Bool = false
-    @Previewable @State var heartbeatDetectionMethod: Session.HeartbeatDetectionMethod = .internalOnly
-
     Card {
         HeartbeatEstimateCard(
-            context: $context,
-            estimateValue: $estimateValue,
-            isEstimating: $isEstimating,
-            resultText: $resultText,
-            lastActionDate: $lastActionDate,
-            isRevealed: $isRevealed,
-            revealTask: $revealTask,
-            showHeartbeatEstimateHelp: $showHeartbeatEstimateHelp,
-            showHeartbeatEstimateSheet: $showHeartbeatEstimateSheet,
-            heartbeatDetectionMethod: $heartbeatDetectionMethod,
-            hr: HeartBeatManager(),
-            onSubmitEstimate: { _, _, _, _ in }
+            sense: SenseSessionModel(),
+            coordinator: HomeDashboardCoordinator(),
+            hr: HeartBeatManager()
         )
     }
 }

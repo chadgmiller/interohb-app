@@ -99,14 +99,15 @@ enum InteroceptiveIndex {
         var maxContextsForBreadth: Int = 4
         var minAwarenessSessionsForScore: Int = 2
 
-        var accuracySlope: Double = 6.0
-        var biasSlope: Double = 12.0
-        var consistencySlope: Double = 10.0
-        var awarenessErrorSlope: Double = 12.0
+        var accuracyDecayBpm: Double = 18.0
+        var biasDecayBpm: Double = 10.0
+        var consistencyDecayBpm: Double = 14.0
+        var awarenessDecayBpm: Double = 16.0
 
-        var wA: Double = 0.35
-        var wB: Double = 0.20
-        var wC: Double = 0.30
+        var wA: Double = 0.28
+        var wB: Double = 0.15
+        var wC: Double = 0.22
+        var wR: Double = 0.20
         var wX: Double = 0.15
     }
 
@@ -146,17 +147,23 @@ enum InteroceptiveIndex {
         let hasAwarenessScore = awarenessAbsDeltaErrors.count >= config.minAwarenessSessionsForScore
         let medAwarenessAbsDeltaError = hasAwarenessScore ? median(awarenessAbsDeltaErrors) : nil
 
-        let A = clamp(100.0 - config.accuracySlope * medAbs, 0, 100)
-        let B = clamp(100.0 - config.biasSlope * abs(medBias), 0, 100)
-        let C = clamp(100.0 - config.consistencySlope * madAbs, 0, 100)
-        let R = medAwarenessAbsDeltaError.map { clamp(100.0 - config.awarenessErrorSlope * $0, 0, 100) }
+        let A = exponentialComponent(medAbs, decayBpm: config.accuracyDecayBpm)
+        let B = exponentialComponent(abs(medBias), decayBpm: config.biasDecayBpm)
+        let C = exponentialComponent(madAbs, decayBpm: config.consistencyDecayBpm)
+        let R = medAwarenessAbsDeltaError.map { exponentialComponent($0, decayBpm: config.awarenessDecayBpm) }
 
-        let indexRaw = weightedAverage([
+        var weightedComponents: [(value: Double, weight: Double)] = [
             (A, config.wA),
             (B, config.wB),
             (C, config.wC),
             (breadthScore, config.wX)
-        ])
+        ]
+
+        if let R {
+            weightedComponents.append((R, config.wR))
+        }
+
+        let indexRaw = weightedAverage(weightedComponents)
 
         let highQualityCount = usable.filter { $0.qualityFlag == .high }.count
         let isSufficient = nonAwareness.count >= config.minNonAwarenessSessions
@@ -197,29 +204,33 @@ enum InteroceptiveIndex {
         )
     }
 
-    private static func isUsableSession(_ session: Session) -> Bool {
+    private nonisolated static func isUsableSession(_ session: Session) -> Bool {
         guard session.completionStatus == .completed else { return false }
         guard session.qualityFlag != .invalid else { return false }
         return true
     }
 
-    static func displayContext(for session: Session) -> String {
+    nonisolated static func displayContext(for session: Session) -> String {
         if let first = session.contextTags.first, !first.isEmpty { return first }
         return session.context
     }
 
-    private static func clamp(_ x: Double, _ lo: Double, _ hi: Double) -> Double {
+    private nonisolated static func clamp(_ x: Double, _ lo: Double, _ hi: Double) -> Double {
         min(max(x, lo), hi)
     }
 
-    private static func weightedAverage(_ items: [(value: Double, weight: Double)]) -> Double {
+    private nonisolated static func exponentialComponent(_ value: Double, decayBpm: Double) -> Double {
+        clamp(100.0 * Foundation.exp(-max(0, value) / decayBpm), 0, 100)
+    }
+
+    private nonisolated static func weightedAverage(_ items: [(value: Double, weight: Double)]) -> Double {
         let wSum = items.reduce(0) { $0 + $1.weight }
         guard wSum > 0 else { return 0 }
         let vSum = items.reduce(0) { $0 + $1.value * $1.weight }
         return vSum / wSum
     }
 
-    private static func median(_ xs: [Double]) -> Double? {
+    private nonisolated static func median(_ xs: [Double]) -> Double? {
         guard !xs.isEmpty else { return nil }
         let s = xs.sorted()
         let n = s.count
@@ -227,18 +238,18 @@ enum InteroceptiveIndex {
         return (s[n / 2 - 1] + s[n / 2]) / 2
     }
 
-    private static func mad(_ xs: [Double]) -> Double? {
+    private nonisolated static func mad(_ xs: [Double]) -> Double? {
         guard let m = median(xs), !xs.isEmpty else { return nil }
         let dev = xs.map { abs($0 - m) }
         return median(dev)
     }
 
-    private static func countContextsMeetingMinSamples(sessions: [Session], minCount: Int) -> Int {
+    private nonisolated static func countContextsMeetingMinSamples(sessions: [Session], minCount: Int) -> Int {
         let grouped = Dictionary(grouping: sessions, by: { displayContext(for: $0) })
         return grouped.values.filter { $0.count >= minCount }.count
     }
 
-    private static func parseDropBpm(from context: String) -> Int? {
+    private nonisolated static func parseDropBpm(from context: String) -> Int? {
         guard let r = context.range(of: "drop ") else { return nil }
         let suffix = context[r.upperBound...]
         let digits = suffix.prefix { $0.isNumber }

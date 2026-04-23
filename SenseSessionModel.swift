@@ -56,8 +56,8 @@ final class SenseSessionModel {
     private func extractScoreFromResultText() -> Int? {
         let lines = resultText.components(separatedBy: "\n")
         for line in lines {
-            if line.contains("Score:") {
-                let parts = line.components(separatedBy: "Score:")
+            if line.contains("Score") {
+                let parts = line.components(separatedBy: "Score")
                 if parts.count > 1 {
                     let scoreString = parts[1].trimmingCharacters(in: .whitespaces)
                     return Int(scoreString)

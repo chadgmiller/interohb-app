@@ -82,6 +82,17 @@ struct HeartbeatEstimateResultsSheet: View {
         try? modelContext.save()
     }
 
+    private var notesBinding: Binding<String> {
+        Binding(
+            get: { session.notes ?? "" },
+            set: { newValue in
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                session.notes = trimmed.isEmpty ? nil : newValue
+                try? modelContext.save()
+            }
+        )
+    }
+
     private var shouldShowLearnCTA: Bool {
         session.score < 40
     }
@@ -121,6 +132,8 @@ struct HeartbeatEstimateResultsSheet: View {
 
                     if let detectionLabel = session.heartbeatDetectionMethodLabel {
                         HStack {
+                            Text("Sensing Method")
+                                .font(.headline)
                             Spacer()
                             Text(detectionLabel)
                                 .foregroundStyle(AppColors.textSecondary)
@@ -129,7 +142,7 @@ struct HeartbeatEstimateResultsSheet: View {
 
                     if let methodText {
                         HStack {
-                            Text("Method")
+                            Text("Entry Method")
                                 .font(.headline)
                             Spacer()
                             Text(methodText)
@@ -270,6 +283,11 @@ struct HeartbeatEstimateResultsSheet: View {
                             )
                         }
                     }
+                }
+
+                Section("Personal Notes") {
+                    TextField("Add a note about this session", text: notesBinding, axis: .vertical)
+                        .lineLimit(3...8)
                 }
 
                 if shouldShowLearnCTA {

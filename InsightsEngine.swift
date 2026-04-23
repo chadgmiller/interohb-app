@@ -371,7 +371,7 @@ struct InsightsEngine {
             case "bias":
                 switch summary.dominantBias {
                 case .overestimating: return "Take 1–2 slow breaths before estimating."
-                case .underestimating: return "Reflect internally to detect heartbeat signals before estimating."
+                case .underestimating: return "Reflect internally to notice heartbeat signals before estimating."
                 case .neutral: return "Keep your pre-estimate routine consistent."
                 }
             case "awareness":

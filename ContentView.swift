@@ -65,6 +65,7 @@ struct ContentView: View {
 }
 
 struct HomeDashboardView: View {
+    @EnvironmentObject var route: AppRoute
 
     // MARK: - Models (replaces ~50 @State properties)
 
@@ -210,31 +211,49 @@ struct HomeDashboardView: View {
 
             ScrollView {
                 VStack(spacing: 14) {
-                    InteroceptiveIndexHeader()
-                        .padding(.bottom, 2)
-                    HomeTrainingProgressCard(
-                        completedThisWeek: completedSessionsThisWeek,
-                        weeklyTarget: weeklyTargetSessions,
-                        streakDays: completedSessionStreakDays,
-                        totalCompletedSessions: completedSessions.count,
-                        hasProfile: profiles.first != nil,
-                        onSetGoal: { showProfile = true }
-                    )
-                    ContextsExploredCard(
-                        exploredContexts: exploredContexts,
-                        allContexts: AppContexts.all
-                    )
-                    VStack(spacing: 8) {
-                        FlippableLiveHRCard(
-                            hr: hr,
-                            isRevealed: sense.isRevealed,
-                            isAwarenessRunning: awareness.isRunning
-                        )
-
-                        Text("Current HR (bpm)")
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(AppColors.textSecondary)
+                    HomeDashboardCard {
+                        InteroceptiveIndexHeader()
                     }
+                    HomeDashboardCard {
+                        HomeTrainingProgressCard(
+                            completedThisWeek: completedSessionsThisWeek,
+                            weeklyTarget: weeklyTargetSessions,
+                            streakDays: completedSessionStreakDays,
+                            totalCompletedSessions: completedSessions.count,
+                            hasProfile: profiles.first != nil,
+                            onSetGoal: { showProfile = true },
+                            onOpenHistory: { route.selectedTab = 1 }
+                        )
+                    }
+                    HomeDashboardCard {
+                        ContextsExploredCard(
+                            exploredContexts: exploredContexts,
+                            allContexts: AppContexts.all
+                        )
+                    }
+                    HomeDashboardCard {
+                        VStack(spacing: 10) {
+                            Text("Current HR")
+                                .font(.headline)
+                                .foregroundStyle(AppColors.textPrimary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            FlippableLiveHRCard(
+                                hr: hr,
+                                isRevealed: sense.isRevealed,
+                                isAwarenessRunning: awareness.isRunning
+                            )
+
+                            Text(hr.isConnected && hr.isStreaming ? "Broacast heart rate (bpm)" : "Connect a Bluetooth heart rate device.")
+                                .font(.footnote)
+                                .foregroundStyle(AppColors.textSecondary)
+                        }
+                    }
+
+                    Text("Activities")
+                        .font(.headline)
+                        .foregroundStyle(AppColors.textPrimary)
+                        .frame(maxWidth: .infinity)
 
                     pulseTab
                     awarenessTab
@@ -350,6 +369,26 @@ struct HomeDashboardView: View {
     }
 }
 
+private struct HomeDashboardCard<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .padding()
+            .background(AppColors.cardSurface)
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.25), radius: 8, x: 0, y: 4)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+            )
+    }
+}
+
 struct InteroceptiveIndexSummaryCard: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var states: [IndexState]
@@ -378,6 +417,7 @@ private struct HomeTrainingProgressCard: View {
     let totalCompletedSessions: Int
     let hasProfile: Bool
     let onSetGoal: () -> Void
+    let onOpenHistory: () -> Void
 
     private var progress: Double {
         guard let weeklyTarget else { return 0 }
@@ -390,77 +430,96 @@ private struct HomeTrainingProgressCard: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .stroke(AppColors.gaugeTrack, lineWidth: 8)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Weekly Goal")
+                .font(.headline)
+                .foregroundStyle(AppColors.textPrimary)
 
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(
-                        AppColors.breathTeal,
-                        style: StrokeStyle(lineWidth: 8, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
+            HStack(alignment: .center, spacing: 16) {
+                Button(action: onSetGoal) {
+                    ZStack {
+                        Circle()
+                            .stroke(AppColors.gaugeTrack, lineWidth: 8)
 
-                VStack(spacing: 1) {
-                    Text("\(completedThisWeek)")
-                        .font(.headline.weight(.semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(AppColors.textPrimary)
+                        Circle()
+                            .trim(from: 0, to: progress)
+                            .stroke(
+                                AppColors.breathTeal,
+                                style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                            )
+                            .rotationEffect(.degrees(-90))
+
+                        VStack(spacing: 1) {
+                            Text("\(completedThisWeek)")
+                                .font(.headline.weight(.semibold))
+                                .monospacedDigit()
+                                .foregroundStyle(AppColors.textPrimary)
+                            if let weeklyTarget {
+                                Text("of \(weeklyTarget)")
+                                    .font(.caption2)
+                                    .foregroundStyle(AppColors.textSecondary)
+                            } else {
+                                Text("goal")
+                                    .font(.caption2)
+                                    .foregroundStyle(AppColors.textSecondary)
+                            }
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .frame(width: 62, height: 62)
+
+                VStack(alignment: .leading, spacing: 4) {
                     if let weeklyTarget {
-                        Text("of \(weeklyTarget)")
-                            .font(.caption2)
+                        Text("\(completedThisWeek) of \(weeklyTarget) sessions this week")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppColors.textPrimary)
+
+                        Text(remainingSessions == 0 ? "Weekly goal reached." : "Do \(remainingSessions) more Sense or Flow sessions to hit your weekly goal.")
+                            .font(.caption)
                             .foregroundStyle(AppColors.textSecondary)
                     } else {
-                        Text("goal")
-                            .font(.caption2)
+                        Text("Set a weekly goal")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppColors.textPrimary)
+
+                        Text(hasProfile ? "Set up a weekly goal in Profile to track your progress here." : "Create a profile and set up a weekly goal to track your progress here.")
+                            .font(.caption)
                             .foregroundStyle(AppColors.textSecondary)
+
+                        Button("Open Profile") {
+                            onSetGoal()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(AppColors.breathTeal)
+                    }
+
+                    Text("\(totalCompletedSessions) total completed sessions")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(AppColors.textSecondary)
+                }
+
+                Spacer()
+
+                Button(action: onOpenHistory) {
+                    VStack(spacing: 6) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 28, weight: .semibold))
+                            .foregroundStyle(streakDays > 0 ? AppColors.pulseCoral : AppColors.textMuted)
+                            .frame(width: 62, height: 62)
+                            .background(
+                                Circle()
+                                    .fill((streakDays > 0 ? AppColors.pulseCoral : AppColors.textMuted).opacity(0.14))
+                            )
+
+                        Text("\(streakDays)d streak")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(streakDays > 0 ? AppColors.pulseCoral : AppColors.textSecondary)
                     }
                 }
+                .buttonStyle(.plain)
             }
-            .frame(width: 62, height: 62)
-
-            VStack(alignment: .leading, spacing: 4) {
-                if let weeklyTarget {
-                    Text("\(completedThisWeek) of \(weeklyTarget) sessions this week")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(AppColors.textPrimary)
-
-                    Text(remainingSessions == 0 ? "Weekly goal reached." : "\(remainingSessions) more to hit your weekly goal.")
-                        .font(.caption)
-                        .foregroundStyle(AppColors.textSecondary)
-                } else {
-                    Text("Set a weekly goal")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(AppColors.textPrimary)
-
-                    Text(hasProfile ? "Set up a weekly goal in Profile to track your progress here." : "Create a profile and set up a weekly goal to track your progress here.")
-                        .font(.caption)
-                        .foregroundStyle(AppColors.textSecondary)
-
-                    Button("Open Profile") {
-                        onSetGoal()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(AppColors.breathTeal)
-                }
-
-                HStack(spacing: 12) {
-                    Label("\(streakDays)d streak", systemImage: "flame.fill")
-                        .foregroundStyle(streakDays > 0 ? AppColors.pulseCoral : AppColors.textMuted)
-
-                    Label("\(totalCompletedSessions) total", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(AppColors.breathTeal)
-                }
-                .font(.caption.weight(.medium))
-            }
-
-            Spacer()
         }
-        .padding(14)
-        .background(AppColors.cardSurface)
-        .clipShape(RoundedRectangle(cornerRadius: 18))
     }
 }
 
@@ -483,7 +542,7 @@ private struct ContextsExploredCard: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Contexts Explored")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.headline)
                         .foregroundStyle(AppColors.textPrimary)
 
                     Text("\(exploredCount) of \(allContexts.count) discovered")
@@ -525,9 +584,6 @@ private struct ContextsExploredCard: View {
                 }
             }
         }
-        .padding(14)
-        .background(AppColors.cardSurface)
-        .clipShape(RoundedRectangle(cornerRadius: 18))
     }
 }
 
@@ -542,16 +598,22 @@ struct InteroceptiveIndexHeader: View {
         return NavigationLink {
             InteroceptiveIndexDetailView()
         } label: {
+            VStack(spacing: 12) {
+                HStack {
+                    Text("Interoceptive Index")
+                        .font(.headline)
+                        .foregroundStyle(AppColors.textPrimary)
 
-            VStack(spacing: 2) {
+                    Spacer()
 
-                Text("Interoceptive Index")
-                    .font(.headline)
-                    .foregroundStyle(AppColors.textSecondary)
+                    Text("Details")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppColors.breathTeal)
+                }
 
                 if let score {
                     Text("\(Int(score.rounded()))")
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.system(size: 36, weight: .bold))
                         .foregroundStyle(level?.color ?? AppColors.textPrimary)
 
                     Text(level?.description ?? "")
@@ -566,7 +628,6 @@ struct InteroceptiveIndexHeader: View {
 
                 }
             }
-            .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .buttonStyle(.plain)

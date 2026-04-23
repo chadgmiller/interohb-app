@@ -79,6 +79,17 @@ struct AwarenessSessionCard: View {
         }
     }
 
+    private func notesBinding(for session: Session) -> Binding<String> {
+        Binding(
+            get: { session.notes ?? "" },
+            set: { newValue in
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                session.notes = trimmed.isEmpty ? nil : newValue
+                try? modelContext.save()
+            }
+        )
+    }
+
     // MARK: - View Builders (moved from HomeDashboardView)
 
     private var awarenessTitleRow: some View {
@@ -193,12 +204,13 @@ struct AwarenessSessionCard: View {
                         .pickerStyle(.menu)
                         .tint(AppColors.textPrimary)
 
-                        HStack {
-                            Text("Heartbeat Sensing")
-                            Spacer()
-                            Text(awareness.detectionMethod.label)
-                                .foregroundStyle(AppColors.textSecondary)
+                        Picker("Sensing Method", selection: $awareness.detectionMethod) {
+                            ForEach(Session.HeartbeatDetectionMethod.allCases) { method in
+                                Text(method.label).tag(method)
+                            }
                         }
+                        .pickerStyle(.menu)
+                        .tint(AppColors.textPrimary)
 
                         if let duration = awareness.pendingDurationSec {
                             HStack {
@@ -239,6 +251,13 @@ struct AwarenessSessionCard: View {
                             Label("Enter Estimate", systemImage: "checkmark.circle")
                                 .frame(maxWidth: .infinity, alignment: .center)
                         }
+
+                        Button(role: .destructive) {
+                            awareness.discardPendingEstimate()
+                        } label: {
+                            Label("Discard Session", systemImage: "trash")
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        }
                     }
                 }
                 .navigationTitle("Heartbeat Change Estimate")
@@ -274,7 +293,7 @@ struct AwarenessSessionCard: View {
                             }
 
                             HStack {
-                                Text("Heartbeat Sensing")
+                                Text("Sensing Method")
                                 Spacer()
                                 Text(session.heartbeatDetectionMethodLabel ?? awareness.detectionMethod.label)
                                     .foregroundStyle(AppColors.textSecondary)
@@ -299,15 +318,6 @@ struct AwarenessSessionCard: View {
                             .padding(.vertical, 8)
                             .background(AppColors.breathTeal.opacity(0.12))
                             .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                            if let baseScore = session.baseScore {
-                                HStack {
-                                    Text("Accuracy Score")
-                                    Spacer()
-                                    Text("\(baseScore)")
-                                        .foregroundStyle(AppColors.textSecondary)
-                                }
-                            }
 
                             if let coach = session.awarenessCoachLine, !coach.isEmpty {
                                 VStack(alignment: .leading, spacing: 4) {
@@ -372,19 +382,9 @@ struct AwarenessSessionCard: View {
                                     .foregroundStyle(AppColors.textSecondary)
                             }
 
-                            if let used = session.awarenessUsedTimeLimitSec {
-                                HStack {
-                                    Text("Time Limit")
-                                        .font(.headline)
-                                    Spacer()
-                                    Text("\(used)s")
-                                        .foregroundStyle(AppColors.textSecondary)
-                                }
-                            }
-
                             if let actual = session.awarenessSeconds {
                                 HStack {
-                                    Text("Actual Duration")
+                                    Text("Duration")
                                         .font(.headline)
                                     Spacer()
                                     Text("\(actual)s")
@@ -432,6 +432,11 @@ struct AwarenessSessionCard: View {
                                     )
                                 }
                             }
+                        }
+
+                        Section("Personal Notes") {
+                            TextField("Add a note about this session", text: notesBinding(for: session), axis: .vertical)
+                                .lineLimit(3...8)
                         }
 
                         if session.score < 40 {

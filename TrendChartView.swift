@@ -318,7 +318,7 @@ struct HeartbeatEstimateChartView: View {
                     }
 
                     HStack {
-                        Text("Context:")
+                        Text("Context")
                             .foregroundStyle(AppColors.textSecondary)
                         Spacer()
                         Picker("Context", selection: $selectedContext) {
@@ -330,7 +330,7 @@ struct HeartbeatEstimateChartView: View {
                     }
 
                     HStack {
-                        Text("Metric:")
+                        Text("Metric")
                             .foregroundStyle(AppColors.textSecondary)
                         Spacer()
                         Picker("Metric", selection: $pulseMetric) {
@@ -362,7 +362,7 @@ struct HeartbeatEstimateChartView: View {
                         }
 
                         HStack {
-                            Text("Data type:")
+                            Text("Data type")
                                 .foregroundStyle(AppColors.textSecondary)
                             Spacer()
                             Picker("", selection: $errorViewMode) {
@@ -626,7 +626,7 @@ struct AwarenessSessionChartView: View {
                     }
 
                     HStack {
-                        Text("Context:")
+                        Text("Context")
                             .foregroundStyle(AppColors.textSecondary)
                         Spacer()
                         Picker("Context", selection: $awarenessContextFilter) {
@@ -638,7 +638,7 @@ struct AwarenessSessionChartView: View {
                     }
 
                     HStack {
-                        Text("Metric:")
+                        Text("Metric")
                             .foregroundStyle(AppColors.textSecondary)
                         Spacer()
                         Picker("Metric", selection: $awarenessMetric) {

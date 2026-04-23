@@ -40,7 +40,7 @@ struct AwarenessSessionSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("Context:", selection: $stagedContext) {
+                    Picker("Context", selection: $stagedContext) {
                         ForEach(AppContexts.all, id: \.self) { Text($0).tag($0) }
                     }
                     .pickerStyle(.menu)
@@ -48,14 +48,15 @@ struct AwarenessSessionSheet: View {
                     .font(.headline)
                 }
 
-                Section("Heartbeat Sensing") {
-                    Picker("Detection Method", selection: $awareness.detectionMethod) {
+                Section("") {
+                    Picker("Sensing Method", selection: $awareness.detectionMethod) {
                         ForEach(Session.HeartbeatDetectionMethod.allCases) { method in
                             Text(method.label).tag(method)
                         }
                     }
                     .pickerStyle(.menu)
                     .tint(AppColors.textPrimary)
+                    .font(.headline)
 
                     Text("Use \u{201c}Interoception only\u{201d} when you are not pressing on pulse points like your neck or wrist.")
                         .font(.footnote)
@@ -88,7 +89,7 @@ struct AwarenessSessionSheet: View {
                         .disabled(isSessionActive)
 
                     if stagedUseTimeLimit {
-                        Stepper("Limit:                       \(stagedTimeLimitSec) sec", value: $stagedTimeLimitSec, in: 15...300, step: 15)
+                        Stepper("Limit                       \(stagedTimeLimitSec) sec", value: $stagedTimeLimitSec, in: 15...300, step: 15)
                             .font(.headline)
                             .disabled(isSessionActive)
                     }
@@ -123,6 +124,23 @@ struct AwarenessSessionSheet: View {
 
                                         ProgressView(value: Double(elapsedDisplay), total: Double(limit))
                                             .tint(AppColors.breathTeal)
+                                    }
+                                }
+                            } else {
+                                TimelineView(.periodic(from: .now, by: 1.0)) { _ in
+                                    let elapsedDisplay: Int = {
+                                        if let start = awareness.startTime, awareness.isRunning, !awareness.isPaused {
+                                            return max(0, Int(Date().timeIntervalSince(start)))
+                                        } else {
+                                            return awareness.elapsedSec
+                                        }
+                                    }()
+
+                                    HStack {
+                                        Text("Elapsed")
+                                        Spacer()
+                                        Text("\(elapsedDisplay)s")
+                                            .foregroundStyle(AppColors.awarenessAccent)
                                     }
                                 }
                             }
@@ -231,6 +249,9 @@ struct AwarenessSessionSheet: View {
                 stagedTimeLimitSec = awareness.timeLimitSec
                 stagedContext = coordinator.context
             }
+            .onChange(of: stagedContext) { _, newValue in
+                coordinator.context = newValue
+            }
             .fullScreenCover(isPresented: $showSetupInstructions) {
                 NavigationStack {
                     ScrollView {
@@ -254,7 +275,7 @@ struct AwarenessSessionSheet: View {
                             Text("Use a time limit if you want a more structured session. Leave it off for open-ended heartbeat-awareness practice.")
                                 .font(.footnote)
                                 .foregroundStyle(AppColors.textSecondary)
-                            Text("How to monitor change over time")
+                            Text("How to observe change over time")
                                 .font(.headline)
                                 .foregroundStyle(AppColors.textSecondary)
                             Text("\u{2022} breathe comfortably\n\u{2022} stay still if possible\n\u{2022} relax your jaw and shoulders so changes in heartbeat feel easier to notice\n\u{2022} pay attention to whether the heartbeat feels faster, slower, stronger, or softer as time passes\n\u{2022} reduce distractions so you can notice gradual shifts\n\u{2022} stay gentle and avoid trying to force the heartbeat to change")

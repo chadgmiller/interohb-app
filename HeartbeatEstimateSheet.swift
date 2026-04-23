@@ -112,7 +112,7 @@ struct HeartbeatEstimateSheet: View {
                 }
 
                 Section("") {
-                    Picker("Detection Method", selection: $sense.detectionMethod) {
+                    Picker("Sensing Method", selection: $sense.detectionMethod) {
                         ForEach(Session.HeartbeatDetectionMethod.allCases) { method in
                             Text(method.label).tag(method)
                         }
@@ -120,6 +120,10 @@ struct HeartbeatEstimateSheet: View {
                     .pickerStyle(.menu)
                     .tint(AppColors.textPrimary)
                     .font(.headline)
+                    
+                    Text("Use \u{201c}Interoception only\u{201d} when you are not pressing on pulse points like your neck or wrist.")
+                        .font(.footnote)
+                        .foregroundStyle(AppColors.textSecondary)
                 }
 
                 Section("Entry Method") {
@@ -181,7 +185,7 @@ struct HeartbeatEstimateSheet: View {
                         } else if isTimerRunning {
                             Section {
                                 HStack {
-                                    Text("Time remaining:")
+                                    Text("Time remaining")
                                         .font(.headline)
                                     Spacer()
                                     Text("\(countdown)s")
@@ -335,7 +339,7 @@ struct HeartbeatEstimateSheet: View {
 
                         if let detectionLabel = session.heartbeatDetectionMethodLabel {
                             HStack {
-                                Text("Heartbeat Sensing")
+                                Text("Sensing Method")
                                     .font(.headline)
                                 Spacer()
                                 Text(detectionLabel)
@@ -457,7 +461,7 @@ struct HeartbeatEstimateSheet: View {
                             Text("Select the context relevant to your current conditions. This helps show how your interoception behaves across different situations.")
                                 .font(.footnote)
                                 .foregroundStyle(AppColors.textSecondary)
-                            Text("Detection Method")
+                            Text("Sensing Method")
                                 .font(.headline)
                                 .foregroundStyle(AppColors.textPrimary)
                             Text("\u{2022} Select \"Interoception only\" when using only your internal senses without touching a pulse point\n \u{2022} Select \"Felt pulse point\" when you are touching neck, wrist or chest to feel your pulse.")
@@ -481,10 +485,10 @@ struct HeartbeatEstimateSheet: View {
                             Text("Pause briefly, reflect on your internal signals, choose your best bpm estimate without rushing to a familiar number and tap Submit Estimate.")
                                 .font(.footnote)
                                 .foregroundStyle(AppColors.textSecondary)
-                            Text("Tips for detecting your heartbeat")
+                            Text("Tips for noticing your heartbeat")
                                 .font(.headline)
                                 .foregroundStyle(AppColors.textPrimary)
-                            Text("\u{2022} Sit still for a moment before you begin\n\u{2022} Notice where the heartbeat feels easiest to detect, such as the chest, throat, or torso\n\u{2022} Relax your jaw, shoulders, and hands so tension does not mask the sensation\n\u{2022} Let your breathing settle instead of forcing a deeper breath")
+                            Text("\u{2022} Sit still for a moment before you begin\n\u{2022} Notice where the heartbeat feels easiest to sense, such as the chest, throat, or torso\n\u{2022} Relax your jaw, shoulders, and hands so tension does not mask the sensation\n\u{2022} Let your breathing settle instead of forcing a deeper breath")
                                 .font(.footnote)
                                 .foregroundStyle(AppColors.textSecondary)
                             Text("Counting tips")

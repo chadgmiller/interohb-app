@@ -301,6 +301,24 @@ final class AwarenessSessionModel {
         pendingEndedAt = nil
     }
 
+    func discardPendingEstimate() {
+        showDeltaEstimateSheet = false
+        showResultsSheet = false
+        showSessionSheet = false
+        activeTimeLimitSec = nil
+        baseline = nil
+        startTime = nil
+        elapsedSec = 0
+        pendingEndHR = nil
+        pendingDurationSec = nil
+        pendingEndedAt = nil
+        sessionResult = "Discarded. Not saved."
+        deltaEstimate = 0
+        didAbortDueToSignalLoss = false
+        selectedHelpTags.removeAll()
+        selectedHinderTags.removeAll()
+    }
+
     @discardableResult
     private func saveSession(
         startedAt: Date?,

@@ -27,6 +27,7 @@ protocol AwarenessSessionRepresentable {
     var awarenessHinderTags: [String]? { get }
     var heartbeatDetectionMethodLabel: String? { get }
     var baseScore: Int? { get }
+    var notes: String? { get }
 }
 
 extension Session: AwarenessSessionRepresentable {}
@@ -97,7 +98,7 @@ struct AwarenessSessionDetailView: View {
 
                 if let detectionLabel = session.heartbeatDetectionMethodLabel {
                     HStack {
-                        Text("Heartbeat Sensing")
+                        Text("Sensing Method")
                             .font(.headline)
                         Spacer()
                         Text(detectionLabel)
@@ -117,16 +118,6 @@ struct AwarenessSessionDetailView: View {
                 .padding(.vertical, 8)
                 .background(AppColors.breathTeal.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                if let baseScore = session.baseScore {
-                    HStack {
-                        Text("Accuracy Score")
-                            .font(.headline)
-                        Spacer()
-                        Text("\(baseScore)")
-                            .foregroundStyle(AppColors.textSecondary)
-                    }
-                }
 
                 if let coachLine = session.awarenessCoachLine, !coachLine.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
@@ -194,19 +185,9 @@ struct AwarenessSessionDetailView: View {
                         .foregroundStyle(AppColors.textSecondary)
                 }
 
-                if let planned = session.awarenessPlannedTimeLimitSec {
-                    HStack {
-                        Text("Planned Time Duration")
-                            .font(.headline)
-                        Spacer()
-                        Text("\(planned) sec")
-                            .foregroundStyle(AppColors.textSecondary)
-                    }
-                }
-
                 if let actual = session.awarenessSeconds {
                     HStack {
-                        Text("Actual Time Duration")
+                        Text("Duration")
                             .font(.headline)
                         Spacer()
                         Text("\(actual) sec")
@@ -244,6 +225,16 @@ struct AwarenessSessionDetailView: View {
                     }
                 }
                 .padding(.vertical, 4)
+            }
+
+            Section("Personal Notes") {
+                if let notes = session.notes, !notes.isEmpty {
+                    Text(notes)
+                        .foregroundStyle(AppColors.textSecondary)
+                } else {
+                    Text("-")
+                        .foregroundStyle(AppColors.textSecondary)
+                }
             }
 
             if deletableSession != nil {

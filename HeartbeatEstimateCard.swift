@@ -33,7 +33,7 @@ struct HeartbeatEstimateCard: View {
             .frame(maxWidth: .infinity, alignment: .center)
 
             VStack(alignment: .center, spacing: 6) {
-                Text("Detect and count your heartbeat now")
+                Text("Notice and count your heartbeat now")
                     .font(.footnote)
                     .foregroundStyle(AppColors.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .center)

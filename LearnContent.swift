@@ -70,10 +70,10 @@ Think of it as a brief reset period between practice sessions rather than a pena
 
     static let estimatingHB: [LearnSection] = [
         LearnSection(id: UUID(uuidString: "33333333-3333-3333-3333-333333333331")!,
-                     title: "How to detect your heartbeat",
+                     title: "How to notice your heartbeat",
                      body: """
 • sit still for a moment before you begin
-• notice where the heartbeat feels easiest to detect, such as the chest, throat, or torso
+• notice where the heartbeat feels easiest to sense, such as the chest, throat, or torso
 • relax your jaw, shoulders, and hands so body tension does not mask the sensation
 • let your breathing settle instead of forcing a deeper breath
 • wait briefly for a clearer internal pulse sensation before you start counting
@@ -100,7 +100,7 @@ This can create a steadier moment for Sense.
 
     static let awareness: [LearnSection] = [
         LearnSection(id: UUID(uuidString: "44444444-4444-4444-4444-444444444441")!,
-                     title: "How to monitor change over time",
+                     title: "How to observe change over time",
                      body: """
 • breathe comfortably
 • stay still if possible

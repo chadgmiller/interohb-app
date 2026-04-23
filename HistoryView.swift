@@ -252,7 +252,7 @@ private struct PulseSessionDetailView: View {
 
                 if let detectionLabel = session.heartbeatDetectionMethodLabel {
                     HStack {
-                        Text("Heartbeat Sensing")
+                        Text("Sensing Method")
                             .font(.headline)
                         Spacer()
                         Text(detectionLabel)
@@ -262,7 +262,7 @@ private struct PulseSessionDetailView: View {
 
                 if let method = session.heartbeatEstimationMethod {
                     HStack {
-                        Text("Method")
+                        Text("Entry Method")
                             .font(.headline)
                         Spacer()
                         Text(method == .timed ? "Timed" : "Observed")
@@ -278,15 +278,6 @@ private struct PulseSessionDetailView: View {
                         .foregroundStyle(AppColors.textSecondary)
                 }
 
-                if let baseScore = session.baseScore {
-                    HStack {
-                        Text("Accuracy Score")
-                            .font(.headline)
-                        Spacer()
-                        Text("\(baseScore)")
-                            .foregroundStyle(AppColors.textSecondary)
-                    }
-                }
             }
 
             Section("Metrics") {
@@ -383,6 +374,16 @@ private struct PulseSessionDetailView: View {
             Section("What got in the way?") {
                 if let tags = session.senseHinderTags, !tags.isEmpty {
                     SessionTagFlowLayout(tags: tags, helpful: false)
+                } else {
+                    Text("-")
+                        .foregroundStyle(AppColors.textSecondary)
+                }
+            }
+
+            Section("Personal Notes") {
+                if let notes = session.notes, !notes.isEmpty {
+                    Text(notes)
+                        .foregroundStyle(AppColors.textSecondary)
                 } else {
                     Text("-")
                         .foregroundStyle(AppColors.textSecondary)

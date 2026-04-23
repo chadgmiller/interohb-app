@@ -66,13 +66,13 @@ struct FlippableLiveHRCard: View {
     private var frontFace: some View {
         LiveHRCard(hr: hr, isRevealed: isRevealed, isAwarenessRunning: isAwarenessRunning)
             .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.vertical, 4)
+            .padding(.vertical, 2)
     }
 
     private var backFace: some View {
         LiveHRCard(hr: hr, isRevealed: true, isAwarenessRunning: isAwarenessRunning)
             .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.vertical, 4)
+            .padding(.vertical, 2)
     }
 }
 

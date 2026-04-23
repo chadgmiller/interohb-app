@@ -195,8 +195,13 @@ final class PurchaseManager: ObservableObject {
             case .success(let verification):
                 switch verification {
                 case .verified(let transaction):
+                    applyVerifiedPremiumAccessIfActive(from: transaction)
                     await transaction.finish()
                     await refreshEntitlements()
+
+                    if !isPremium {
+                        await waitForPremiumActivation()
+                    }
 
                 case .unverified:
                     purchaseErrorMessage = "Purchase could not be verified."
@@ -236,10 +241,21 @@ final class PurchaseManager: ObservableObject {
                 switch verification {
                 case .verified(let transaction):
                     print("[StoreKit] Purchase verified for \(product.id). Transaction: \(transaction.id)")
-                    purchaseInfoMessage = "Purchase successful."
-                    purchaseErrorMessage = nil
+                    applyVerifiedPremiumAccessIfActive(from: transaction)
                     await transaction.finish()
                     await refreshEntitlements()
+
+                    if !isPremium {
+                        await waitForPremiumActivation()
+                    }
+
+                    if isPremium {
+                        purchaseInfoMessage = "Purchase successful."
+                        purchaseErrorMessage = nil
+                    } else {
+                        purchaseInfoMessage = nil
+                        purchaseErrorMessage = "The purchase was verified, but Premium did not activate yet. Please tap Restore Purchases or try again in a moment."
+                    }
 
                 case .unverified(_, let verificationError):
                     print("[StoreKit] Purchase unverified for \(product.id): \(verificationError.localizedDescription)")
@@ -305,12 +321,19 @@ final class PurchaseManager: ObservableObject {
         }
 
         purchasedProductIDs = newIDs
-        isPremium = newIDs.contains(Self.premiumYearlyID)
         let entitlementIDs = newIDs.sorted().joined(separator: ", ")
-        let premiumActive = isPremium ? "yes" : "no"
         debugLog("Current entitlements: \(entitlementIDs)")
-        debugLog("Premium active: \(premiumActive)")
         await refreshSubscriptionStatus()
+
+        let hasAccessFromSubscriptionStatus = phaseProvidesPremiumAccess(premiumSubscriptionStatus.phase)
+        if hasAccessFromSubscriptionStatus {
+            newIDs.insert(Self.premiumYearlyID)
+            purchasedProductIDs = newIDs
+        }
+
+        isPremium = newIDs.contains(Self.premiumYearlyID) || hasAccessFromSubscriptionStatus
+        let premiumActive = isPremium ? "yes" : "no"
+        debugLog("Premium active: \(premiumActive)")
     }
 
     private func observeTransactionUpdates() -> Task<Void, Never> {
@@ -323,6 +346,32 @@ final class PurchaseManager: ObservableObject {
                 await transaction.finish()
                 await self.refreshEntitlements()
             }
+        }
+    }
+
+    private func applyVerifiedPremiumAccessIfActive(from transaction: Transaction) {
+        guard transaction.productID == Self.premiumYearlyID else { return }
+        guard transaction.revocationDate == nil else { return }
+
+        if let expirationDate = transaction.expirationDate, expirationDate <= Date() {
+            return
+        }
+
+        purchasedProductIDs.insert(Self.premiumYearlyID)
+        isPremium = true
+        debugLog("Activated Premium immediately from verified transaction: \(transaction.productID)")
+    }
+
+    private func waitForPremiumActivation() async {
+        try? await AppStore.sync()
+
+        for _ in 0..<5 {
+            await refreshEntitlements()
+            if isPremium {
+                return
+            }
+
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
         }
     }
 
@@ -401,6 +450,15 @@ final class PurchaseManager: ObservableObject {
             return 10
         case .unknown:
             return 0
+        }
+    }
+
+    private func phaseProvidesPremiumAccess(_ phase: PremiumSubscriptionStatus.Phase) -> Bool {
+        switch phase {
+        case .activeAutoRenewOn, .activeAutoRenewOff, .inGracePeriod, .inBillingRetry:
+            return true
+        case .unknown, .availableForPurchase, .expiredAfterCancellation, .expiredFromBillingError, .expired, .revoked:
+            return false
         }
     }
 

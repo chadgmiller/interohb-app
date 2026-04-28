@@ -7,19 +7,106 @@
 
 import Foundation
 
+struct LearnReference: Identifiable, Hashable {
+    let title: String
+    let urlString: String
+
+    var id: String { urlString }
+}
+
 struct LearnSection: Identifiable, Hashable {
     let id: UUID
     let title: String
     let body: String
+    let references: [LearnReference]
+    let note: String?
 
-    init(id: UUID = UUID(), title: String, body: String) {
+    init(
+        id: UUID = UUID(),
+        title: String,
+        body: String,
+        references: [LearnReference] = [],
+        note: String? = nil
+    ) {
         self.id = id
         self.title = title
         self.body = body
+        self.references = references
+        self.note = note
     }
 }
 
 enum LearnContentStore {
+    static let sourcesMethodology: [LearnSection] = [
+        LearnSection(
+            id: UUID(uuidString: "77777777-7777-7777-7777-777777777771")!,
+            title: "Important disclaimer",
+            body: """
+InteroHB is designed for general wellness, self-awareness, and practice with in-app exercises. It is not a medical device, does not provide medical advice, and is not intended to diagnose, treat, cure, prevent, or monitor any disease or medical condition. Heart rate values are provided by the connected Bluetooth heart rate device.
+"""
+        ),
+        LearnSection(
+            id: UUID(uuidString: "77777777-7777-7777-7777-777777777772")!,
+            title: "How InteroHB uses heart rate data",
+            body: """
+InteroHB uses heart rate values from a connected Bluetooth heart rate device during practice sessions. Heart rate can vary naturally based on movement, posture, breathing, stress, sleep, hydration, medication, fitness level, and other factors. InteroHB uses this information only to support reflection during in-app exercises.
+"""
+        ),
+        LearnSection(
+            id: UUID(uuidString: "77777777-7777-7777-7777-777777777773")!,
+            title: "Sense methodology",
+            body: """
+Sense sessions compare the user's estimated heartbeat or heart rate with the measured value from the connected heart rate device. The resulting score is app-specific and reflects performance within the exercise only. It should not be interpreted as a clinical measurement or medical assessment.
+"""
+        ),
+        LearnSection(
+            id: UUID(uuidString: "77777777-7777-7777-7777-777777777774")!,
+            title: "Flow methodology",
+            body: """
+Flow sessions help users observe how their heartbeat and heart rate change over a period of time. Flow-related scores are based on session patterns within the app, such as consistency, estimation accuracy, and changes observed during the exercise. These scores are app-specific and are intended only for wellness reflection and practice.
+"""
+        ),
+        LearnSection(
+            id: UUID(uuidString: "77777777-7777-7777-7777-777777777775")!,
+            title: "Interoceptive Index methodology",
+            body: """
+The Interoceptive Index is an app-specific wellness score based on patterns across completed sessions, including heartbeat estimation accuracy, consistency over time, and session context. It is designed to summarize practice trends within InteroHB. It is not a medical score, diagnostic score, clinical assessment, or measure of disease risk.
+"""
+        ),
+        LearnSection(
+            id: UUID(uuidString: "77777777-7777-7777-7777-777777777776")!,
+            title: "Sources",
+            body: "These sources support general educational information about heart rate, Bluetooth heart rate data, and interoception research.",
+            references: [
+                LearnReference(
+                    title: "American Heart Association — Target Heart Rates / Heart Rate Basics",
+                    urlString: "https://www.heart.org/en/healthy-living/fitness/fitness-basics/target-heart-rates"
+                ),
+                LearnReference(
+                    title: "CDC — Measuring Physical Activity Intensity",
+                    urlString: "https://www.cdc.gov/physical-activity-basics/measuring/index.html"
+                ),
+                LearnReference(
+                    title: "Bluetooth SIG — Heart Rate Service Specification",
+                    urlString: "https://www.bluetooth.com/specifications/specs/heart-rate-service-1-0/"
+                ),
+                LearnReference(
+                    title: "Garfinkel et al. — Interoceptive dimensions across cardiac and respiratory axes",
+                    urlString: "https://royalsocietypublishing.org/doi/10.1098/rstb.2016.0014"
+                ),
+                LearnReference(
+                    title: "Brener & Ring — Towards a psychophysics of interoceptive processes",
+                    urlString: "https://pmc.ncbi.nlm.nih.gov/articles/PMC5062103/"
+                ),
+                LearnReference(
+                    title: "Kandasamy et al. — Interoceptive Ability Predicts Survival on a London Trading Floor",
+                    urlString: "https://www.nature.com/articles/srep32986"
+                )
+            ],
+            note: "InteroHB's in-app scores are proprietary, app-specific wellness scores and are not clinical or diagnostic measures."
+        )
+    ]
+
     static let interoception: [LearnSection] = [
         LearnSection(id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
                      title: "What is interoception?",
@@ -152,6 +239,7 @@ If you have health concerns or symptoms, consult a qualified healthcare professi
 }
 
 enum LearnTopic: String, CaseIterable, Identifiable {
+    case sourcesMethodology = "Sources & Methodology"
     case interoception = "Interoception"
     case howItWorks = "How It Works"
     case estimatingHB = "Sense"
@@ -163,6 +251,7 @@ enum LearnTopic: String, CaseIterable, Identifiable {
 
     var sections: [LearnSection] {
         switch self {
+        case .sourcesMethodology: return LearnContentStore.sourcesMethodology
         case .interoception: return LearnContentStore.interoception
         case .howItWorks:    return LearnContentStore.howItWorks
         case .estimatingHB:  return LearnContentStore.estimatingHB

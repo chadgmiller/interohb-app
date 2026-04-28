@@ -9,6 +9,7 @@ import SwiftUI
 import SwiftData
 
 struct InteroceptiveIndexDetailView: View {
+    @EnvironmentObject private var route: AppRoute
     @EnvironmentObject private var purchaseManager: PurchaseManager
     @Query private var states: [IndexState]
     @Query(sort: \Session.timestamp, order: .reverse) private var sessions: [Session]
@@ -160,6 +161,11 @@ struct InteroceptiveIndexDetailView: View {
     private func currentAwarenessComponent(indexState: IndexState?, breakdown: InteroceptiveIndexBreakdown) -> Double? {
         guard breakdown.awarenessScore != nil else { return nil }
         return indexState?.awarenessComponent ?? breakdown.awarenessScore
+    }
+
+    private func openSourcesMethodology() {
+        route.selectedTab = 4
+        route.learnLink = .sourcesMethodology
     }
 
     private func contributors(from breakdown: InteroceptiveIndexBreakdown) -> [(String, Double)] {
@@ -391,12 +397,26 @@ struct InteroceptiveIndexDetailView: View {
                             }
                             .buttonStyle(.plain)
                         }
+
+                        Section("About this score") {
+                            Button("Sources & Methodology") {
+                                openSourcesMethodology()
+                            }
+                            .foregroundStyle(AppColors.breathTeal)
+                        }
                     } else {
                         Section("Components") {
                             PremiumUpsellView(message: "Interoceptive Index component breakdowns are available to Premium users.")
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                             .listRowBackground(Color.clear)
+                        }
+
+                        Section("About this score") {
+                            Button("Sources & Methodology") {
+                                openSourcesMethodology()
+                            }
+                            .foregroundStyle(AppColors.breathTeal)
                         }
                     }
                 }

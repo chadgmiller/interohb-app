@@ -439,6 +439,14 @@ struct AwarenessSessionCard: View {
                                 .lineLimit(3...8)
                         }
 
+                        Section("About this score") {
+                            Button("Sources & Methodology") {
+                                openSourcesMethodology()
+                            }
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .foregroundStyle(AppColors.breathTeal)
+                        }
+
                         if session.score < 40 {
                             Section {
                                 Button("Learn how to improve your heartbeat sensing") {
@@ -526,6 +534,16 @@ struct AwarenessSessionCard: View {
         DispatchQueue.main.async {
             route.selectedTab = 4
             route.learnLink = .awareness
+        }
+    }
+
+    private func openSourcesMethodology() {
+        awareness.showResultsSheet = false
+        awareness.showSessionSheet = false
+
+        DispatchQueue.main.async {
+            route.selectedTab = 4
+            route.learnLink = .sourcesMethodology
         }
     }
 }

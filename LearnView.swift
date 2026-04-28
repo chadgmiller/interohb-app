@@ -38,10 +38,28 @@ struct LearnView: View {
                                     }
                                 )
                             ) {
-                                Text(sec.body)
-                                    .font(.body)
-                                    .foregroundStyle(AppColors.textPrimary)
-                                    .padding(.top, 6)
+                                VStack(alignment: .leading, spacing: 12) {
+                                    if !sec.body.isEmpty {
+                                        Text(sec.body)
+                                            .font(.body)
+                                            .foregroundStyle(AppColors.textPrimary)
+                                    }
+
+                                    ForEach(sec.references) { reference in
+                                        if let url = URL(string: reference.urlString) {
+                                            Link(reference.title, destination: url)
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(AppColors.breathTeal)
+                                        }
+                                    }
+
+                                    if let note = sec.note {
+                                        Text(note)
+                                            .font(.footnote)
+                                            .foregroundStyle(AppColors.textSecondary)
+                                    }
+                                }
+                                .padding(.top, 6)
                             } label: {
                                 Text(sec.title)
                                     .font(.headline)
@@ -88,6 +106,8 @@ struct LearnView: View {
           
                 guard let link else { return }
                 switch link {
+                case .sourcesMethodology:
+                    expandTopic(.sourcesMethodology)
                 case .interoception:
                     expandTopic(.interoception)
                 case .estimatingHB:

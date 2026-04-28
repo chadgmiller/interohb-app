@@ -9,6 +9,7 @@ import Foundation
 import Combine
 
 enum LearnDeepLink: Hashable {
+    case sourcesMethodology
     case interoception
     case estimatingHB
     case awareness

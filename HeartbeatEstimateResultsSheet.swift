@@ -110,6 +110,19 @@ struct HeartbeatEstimateResultsSheet: View {
         }
     }
 
+    private func openSourcesMethodology() {
+        if let onDismiss {
+            onDismiss()
+        } else {
+            dismiss()
+        }
+
+        DispatchQueue.main.async {
+            route.selectedTab = 4
+            route.learnLink = .sourcesMethodology
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -288,6 +301,14 @@ struct HeartbeatEstimateResultsSheet: View {
                 Section("Personal Notes") {
                     TextField("Add a note about this session", text: notesBinding, axis: .vertical)
                         .lineLimit(3...8)
+                }
+
+                Section("About this score") {
+                    Button("Sources & Methodology") {
+                        openSourcesMethodology()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .foregroundStyle(AppColors.breathTeal)
                 }
 
                 if shouldShowLearnCTA {

@@ -29,6 +29,7 @@ private enum InsightInfoSheet: Identifiable {
 }
 
 struct InsightsView: View {
+    @EnvironmentObject private var route: AppRoute
     @EnvironmentObject private var purchaseManager: PurchaseManager
     
     @Query(sort: \Session.timestamp, order: .reverse)
@@ -70,6 +71,11 @@ struct InsightsView: View {
                 .font(.subheadline)
                 .foregroundStyle(AppColors.textSecondary)
         }
+    }
+
+    private func openSourcesMethodology() {
+        route.selectedTab = 4
+        route.learnLink = .sourcesMethodology
     }
 
     var body: some View {
@@ -287,6 +293,13 @@ struct InsightsView: View {
                 
                 Section("Interoceptive Index") {
                     InsightsIndexSection(states: states)
+                }
+
+                Section("About these insights") {
+                    Button("Sources & Methodology") {
+                        openSourcesMethodology()
+                    }
+                    .foregroundStyle(AppColors.breathTeal)
                 }
             }
             .scrollContentBackground(.hidden)

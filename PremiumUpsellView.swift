@@ -23,7 +23,7 @@ struct PremiumUpsellView: View {
                 .multilineTextAlignment(.center)
 
             Button {
-                Task { await presentPaywall() }
+                presentPaywall()
             } label: {
                 paywallButtonLabel(paywallButtonTitle)
             }
@@ -39,13 +39,16 @@ struct PremiumUpsellView: View {
         }
     }
 
-    private func presentPaywall() async {
+    private func presentPaywall() {
         guard !isPreparingPaywall else { return }
 
         isPreparingPaywall = true
-        _ = await purchaseManager.ensureProductsLoaded()
-        isPreparingPaywall = false
         showPaywall = true
+        isPreparingPaywall = false
+
+        Task {
+            _ = await purchaseManager.ensureProductsLoaded()
+        }
     }
 
     @ViewBuilder

@@ -631,7 +631,7 @@ struct ProfileFormView: View {
                     }
                 } else {
                     Button {
-                        Task { await presentPaywall() }
+                        presentPaywall()
                     } label: {
                         paywallButtonLabel(paywallButtonTitle)
                     }
@@ -641,9 +641,6 @@ struct ProfileFormView: View {
                 Button("Restore Purchases") {
                     Task { await purchaseManager.restorePurchases() }
                 }
-            }
-            .sheet(isPresented: $showPaywall) {
-                PremiumPaywallView()
             }
 
             Section("Privacy") {
@@ -657,6 +654,9 @@ struct ProfileFormView: View {
                     Text("Reset Profile")
                 }
             }
+        }
+        .sheet(isPresented: $showPaywall) {
+            PremiumPaywallView()
         }
         .scrollContentBackground(.hidden)
         .background(AppColors.screenBackground.ignoresSafeArea())
@@ -944,13 +944,16 @@ struct ProfileFormView: View {
         return w / (hm * hm)
     }
 
-    private func presentPaywall() async {
+    private func presentPaywall() {
         guard !isPreparingPaywall else { return }
 
         isPreparingPaywall = true
-        _ = await purchaseManager.ensureProductsLoaded()
-        isPreparingPaywall = false
         showPaywall = true
+        isPreparingPaywall = false
+
+        Task {
+            _ = await purchaseManager.ensureProductsLoaded()
+        }
     }
 
     @ViewBuilder

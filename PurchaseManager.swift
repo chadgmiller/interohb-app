@@ -53,8 +53,11 @@ final class PurchaseManager: ObservableObject {
 
     private var updatesTask: Task<Void, Never>?
     private var entitlementRefreshTask: Task<Void, Never>?
+    private var locallyVerifiedPremiumExpirationDate: Date?
+    private let instanceID = UUID().uuidString.prefix(8)
 
     init() {
+        debugLog("PurchaseManager init instance=\(instanceID)")
         updatesTask = observeTransactionUpdates()
     }
 
@@ -64,11 +67,13 @@ final class PurchaseManager: ObservableObject {
     }
 
     func start() async {
+        debugLog("PurchaseManager start instance=\(instanceID)")
         _ = await ensureProductsLoaded()
         await refreshEntitlements()
     }
 
     func startEntitlementRefreshLoop() {
+        debugLog("Starting entitlement refresh loop instance=\(instanceID)")
         entitlementRefreshTask?.cancel()
         entitlementRefreshTask = Task { [weak self] in
             guard let self else { return }
@@ -84,6 +89,7 @@ final class PurchaseManager: ObservableObject {
     }
 
     func stopEntitlementRefreshLoop() {
+        debugLog("Stopping entitlement refresh loop instance=\(instanceID)")
         entitlementRefreshTask?.cancel()
         entitlementRefreshTask = nil
     }
@@ -190,11 +196,13 @@ final class PurchaseManager: ObservableObject {
 
         do {
             let result = try await product.purchase()
+            debugLog("purchasePremium() completed with result for product=\(product.id)")
 
             switch result {
             case .success(let verification):
                 switch verification {
                 case .verified(let transaction):
+                    debugLog("purchasePremium() verified transaction: \(describe(transaction: transaction))")
                     applyVerifiedPremiumAccessIfActive(from: transaction)
                     await transaction.finish()
                     await refreshEntitlements()
@@ -225,7 +233,8 @@ final class PurchaseManager: ObservableObject {
         isPurchaseInProgress = true
         purchaseErrorMessage = nil
         purchaseInfoMessage = "Opening purchase confirmation for \(product.displayName)…"
-        print("[StoreKit] Purchase started for \(product.id) (\(product.displayName))")
+        storeKitLog("Purchase started for \(product.id) (\(product.displayName))")
+        debugLog("handleStorePurchaseStart instance=\(instanceID) product=\(product.id)")
     }
 
     func handleStorePurchaseCompletion(
@@ -240,14 +249,27 @@ final class PurchaseManager: ObservableObject {
             case .success(let verification):
                 switch verification {
                 case .verified(let transaction):
-                    print("[StoreKit] Purchase verified for \(product.id). Transaction: \(transaction.id)")
-                    applyVerifiedPremiumAccessIfActive(from: transaction)
+                    storeKitLog("Purchase verified for \(product.id). Transaction: \(transaction.id)")
+                    debugLog("Verified purchase callback: \(describe(transaction: transaction))")
+                    await logStoreKitSnapshot(context: "before finishing callback transaction", product: product)
                     await transaction.finish()
+                    debugLog("Finished verified transaction: \(transaction.id)")
                     await refreshEntitlements()
 
                     if !isPremium {
                         await waitForPremiumActivation()
                     }
+
+                    await logStoreKitSnapshot(context: "after purchase completion refresh", product: product)
+                    debugLog(
+                        """
+                        Post-purchase entitlement refresh: \
+                        callbackProductID=\(transaction.productID), \
+                        callbackPurchaseDate=\(format(date: transaction.purchaseDate)), \
+                        callbackExpirationDate=\(format(date: transaction.expirationDate)), \
+                        isPremiumAfterRefresh=\(isPremium)
+                        """
+                    )
 
                     if isPremium {
                         purchaseInfoMessage = "Purchase successful."
@@ -258,29 +280,29 @@ final class PurchaseManager: ObservableObject {
                     }
 
                 case .unverified(_, let verificationError):
-                    print("[StoreKit] Purchase unverified for \(product.id): \(verificationError.localizedDescription)")
+                    storeKitLog("Purchase unverified for \(product.id): \(verificationError.localizedDescription)")
                     purchaseInfoMessage = nil
                     purchaseErrorMessage = "Purchase could not be verified."
                 }
 
             case .pending:
-                print("[StoreKit] Purchase pending for \(product.id)")
+                storeKitLog("Purchase pending for \(product.id)")
                 purchaseInfoMessage = "Purchase is pending approval."
                 purchaseErrorMessage = nil
 
             case .userCancelled:
-                print("[StoreKit] Purchase cancelled for \(product.id)")
+                storeKitLog("Purchase cancelled for \(product.id)")
                 purchaseInfoMessage = "Purchase cancelled."
                 purchaseErrorMessage = nil
 
             @unknown default:
-                print("[StoreKit] Unknown purchase result for \(product.id)")
+                storeKitLog("Unknown purchase result for \(product.id)")
                 purchaseInfoMessage = nil
                 purchaseErrorMessage = "Unknown purchase result."
             }
 
         case .failure(let error):
-            print("[StoreKit] Purchase failed for \(product.id): \(error.localizedDescription)")
+            storeKitLog("Purchase failed for \(product.id): \(error.localizedDescription)")
             purchaseInfoMessage = nil
             purchaseErrorMessage = purchaseErrorMessage(for: error)
         }
@@ -308,12 +330,17 @@ final class PurchaseManager: ObservableObject {
 
     func refreshEntitlements() async {
         var newIDs = Set<String>()
+        var activePremiumExpirationDate: Date?
 
         for await result in Transaction.currentEntitlements {
             switch result {
             case .verified(let transaction):
                 newIDs.insert(transaction.productID)
-                debugLog("Verified entitlement: \(transaction.productID)")
+                debugLog("Verified entitlement: \(describe(transaction: transaction))")
+                if transaction.productID == Self.premiumYearlyID,
+                   transaction.revocationDate == nil {
+                    activePremiumExpirationDate = transaction.expirationDate
+                }
             case .unverified:
                 debugLog("Encountered unverified entitlement.")
                 continue
@@ -323,12 +350,22 @@ final class PurchaseManager: ObservableObject {
         purchasedProductIDs = newIDs
         let entitlementIDs = newIDs.sorted().joined(separator: ", ")
         debugLog("Current entitlements: \(entitlementIDs)")
+        if let premiumProduct {
+            await logLatestTransaction(for: premiumProduct, context: "during refreshEntitlements")
+            await logProductSpecificEntitlements(for: premiumProduct, context: "during refreshEntitlements")
+        }
         await refreshSubscriptionStatus()
 
         let hasAccessFromSubscriptionStatus = phaseProvidesPremiumAccess(premiumSubscriptionStatus.phase)
         if hasAccessFromSubscriptionStatus {
             newIDs.insert(Self.premiumYearlyID)
             purchasedProductIDs = newIDs
+        }
+
+        locallyVerifiedPremiumExpirationDate = activePremiumExpirationDate
+
+        if premiumSubscriptionStatus.phase == .revoked {
+            locallyVerifiedPremiumExpirationDate = nil
         }
 
         isPremium = newIDs.contains(Self.premiumYearlyID) || hasAccessFromSubscriptionStatus
@@ -339,34 +376,65 @@ final class PurchaseManager: ObservableObject {
     private func observeTransactionUpdates() -> Task<Void, Never> {
         Task.detached(priority: .background) { [weak self] in
             guard let self else { return }
+            await self.debugLog("Transaction.updates listener started instance=\(self.instanceID)")
 
             for await result in Transaction.updates {
-                guard case .verified(let transaction) = result else { continue }
-
-                await transaction.finish()
-                await self.refreshEntitlements()
+                switch result {
+                case .verified(let transaction):
+                    await self.debugLog("Transaction.updates verified: \(self.describe(transaction: transaction))")
+                    await transaction.finish()
+                    await self.refreshEntitlements()
+                case .unverified(let transaction, let error):
+                    await self.debugLog(
+                        "Transaction.updates unverified: transactionID=\(transaction.id), productID=\(transaction.productID), error=\(error.localizedDescription)"
+                    )
+                    await transaction.finish()
+                }
             }
+
+            await self.debugLog("Transaction.updates listener ended instance=\(self.instanceID)")
         }
     }
 
     private func applyVerifiedPremiumAccessIfActive(from transaction: Transaction) {
         guard transaction.productID == Self.premiumYearlyID else { return }
-        guard transaction.revocationDate == nil else { return }
-
-        if let expirationDate = transaction.expirationDate, expirationDate <= Date() {
+        guard transaction.revocationDate == nil else {
+            debugLog("Not activating Premium from verified transaction because it is revoked: \(describe(transaction: transaction))")
             return
         }
 
+        if let expirationDate = transaction.expirationDate, expirationDate <= Date() {
+            debugLog("Not activating Premium from verified transaction because it is expired: \(describe(transaction: transaction))")
+            return
+        }
+
+        locallyVerifiedPremiumExpirationDate = transaction.expirationDate
         purchasedProductIDs.insert(Self.premiumYearlyID)
         isPremium = true
         debugLog("Activated Premium immediately from verified transaction: \(transaction.productID)")
     }
 
     private func waitForPremiumActivation() async {
+        debugLog("Waiting for Premium activation after verified purchase.")
         try? await AppStore.sync()
+        debugLog("Finished AppStore.sync() while waiting for Premium activation.")
 
-        for _ in 0..<5 {
+        for attempt in 0..<5 {
             await refreshEntitlements()
+            if let premiumProduct {
+                await logLatestTransaction(for: premiumProduct, context: "waitForPremiumActivation attempt \(attempt + 1)")
+                await logProductSpecificEntitlements(for: premiumProduct, context: "waitForPremiumActivation attempt \(attempt + 1)")
+            }
+            debugLog(
+                """
+                Activation wait attempt \(attempt + 1)/5: \
+                isPremium=\(isPremium), \
+                purchased=\(purchasedProductIDs.sorted().joined(separator: ",")), \
+                phase=\(premiumSubscriptionStatus.phase), \
+                expiration=\(format(date: premiumSubscriptionStatus.expirationDate)), \
+                localVerifiedExpiration=\(format(date: locallyVerifiedPremiumExpirationDate))
+                """
+            )
             if isPremium {
                 return
             }
@@ -419,6 +487,16 @@ final class PurchaseManager: ObservableObject {
         default:
             phase = .expired
         }
+
+        debugLog(
+            """
+            Raw subscription status: \
+            state=\(String(describing: status.state)), \
+            renewalState=\(renewalInfo.map { "autoRenew=\($0.willAutoRenew), billingRetry=\($0.isInBillingRetry), expirationReason=\(String(describing: $0.expirationReason))" } ?? "unverified-or-missing"), \
+            transaction=\(transaction.map(describe(transaction:)) ?? "unverified-or-missing"), \
+            resolvedPhase=\(phase)
+            """
+        )
 
         return PremiumSubscriptionStatus(
             phase: phase,
@@ -489,6 +567,61 @@ final class PurchaseManager: ObservableObject {
         return baseMessage
     }
 
+    private func logStoreKitSnapshot(context: String, product: Product? = nil) async {
+        debugLog("StoreKit snapshot begin context=\(context)")
+
+        if let product {
+            await logLatestTransaction(for: product, context: context)
+            await logProductSpecificEntitlements(for: product, context: context)
+        } else if let premiumProduct {
+            await logLatestTransaction(for: premiumProduct, context: context)
+            await logProductSpecificEntitlements(for: premiumProduct, context: context)
+        }
+
+        debugLog(
+            """
+            StoreKit snapshot summary context=\(context): \
+            isPremium=\(isPremium), \
+            purchased=\(purchasedProductIDs.sorted().joined(separator: ",")), \
+            phase=\(premiumSubscriptionStatus.phase), \
+            phaseExpiration=\(format(date: premiumSubscriptionStatus.expirationDate)), \
+            localVerifiedExpiration=\(format(date: locallyVerifiedPremiumExpirationDate))
+            """
+        )
+    }
+
+    private func logLatestTransaction(for product: Product, context: String) async {
+        guard let latestTransaction = await product.latestTransaction else {
+            debugLog("latestTransaction context=\(context) product=\(product.id): nil")
+            return
+        }
+
+        switch latestTransaction {
+        case .verified(let transaction):
+            debugLog("latestTransaction context=\(context) product=\(product.id): \(describe(transaction: transaction))")
+        case .unverified(let transaction, let error):
+            debugLog(
+                "latestTransaction context=\(context) product=\(product.id): unverified transactionID=\(transaction.id), error=\(error.localizedDescription)"
+            )
+        }
+    }
+
+    private func logProductSpecificEntitlements(for product: Product, context: String) async {
+        var entries: [String] = []
+
+        for await result in Transaction.currentEntitlements(for: product.id) {
+            switch result {
+            case .verified(let transaction):
+                entries.append("verified[\(describe(transaction: transaction))]")
+            case .unverified(let transaction, let error):
+                entries.append("unverified[transactionID=\(transaction.id), error=\(error.localizedDescription)]")
+            }
+        }
+
+        let joined = entries.isEmpty ? "none" : entries.joined(separator: " | ")
+        debugLog("currentEntitlements(for:) context=\(context) product=\(product.id): \(joined)")
+    }
+
     private func restoreErrorMessage(for error: Error) -> String {
         let baseMessage: String
 
@@ -501,7 +634,38 @@ final class PurchaseManager: ObservableObject {
         return baseMessage
     }
 
+    private func describe(transaction: Transaction) -> String {
+        let ownershipType: String
+        switch transaction.ownershipType {
+        case .purchased:
+            ownershipType = "purchased"
+        case .familyShared:
+            ownershipType = "familyShared"
+        default:
+            ownershipType = "unknown"
+        }
+
+        return """
+        id=\(transaction.id), \
+        originalID=\(transaction.originalID), \
+        productID=\(transaction.productID), \
+        purchaseDate=\(format(date: transaction.purchaseDate)), \
+        expirationDate=\(format(date: transaction.expirationDate)), \
+        revocationDate=\(format(date: transaction.revocationDate)), \
+        ownershipType=\(ownershipType)
+        """
+    }
+
+    private func format(date: Date?) -> String {
+        guard let date else { return "nil" }
+        return ISO8601DateFormatter().string(from: date)
+    }
+
 #if DEBUG
+    private func storeKitLog(_ message: String) {
+        print("[StoreKit] \(message)")
+    }
+
     private func debugLog(_ message: String) {
         debugDiagnostics.append(message)
         if debugDiagnostics.count > 20 {
@@ -510,6 +674,7 @@ final class PurchaseManager: ObservableObject {
         print("[PurchaseManager DEBUG] \(message)")
     }
 #else
+    private func storeKitLog(_ message: String) { }
     private func debugLog(_ message: String) { }
 #endif
 }

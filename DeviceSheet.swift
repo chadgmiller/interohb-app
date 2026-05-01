@@ -102,7 +102,7 @@ struct DeviceSheet: View {
                 Button("Continue") {
                     beginUserInitiatedAddDeviceScan()
                 }
-                Button("Not Now", role: .cancel) { }
+           //     Button("Not Now", role: .cancel) { }
             } message: {
                 Text("InteroHB uses Bluetooth to connect to consumer fitness devices for wellness and educational exercises.")
             }

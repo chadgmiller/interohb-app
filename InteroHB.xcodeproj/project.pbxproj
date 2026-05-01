@@ -16,6 +16,7 @@
 		0FE45FC92F96E87400A747F3 /* InteroHB.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = InteroHB.xcodeproj; sourceTree = "<group>"; };
 		0FE460C72F9B290800A747F3 /* InteroHB.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = InteroHB.xcodeproj; sourceTree = "<group>"; };
 		0FE461442F9F2D8F00A747F3 /* InteroHB.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = InteroHB.xcodeproj; sourceTree = "<group>"; };
+		0FE461C22FA077FC00A747F3 /* InteroHB.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = InteroHB.xcodeproj; sourceTree = "<group>"; };
 		1F51B3F32F3EDCCA00DB0B3A /* InteroHB.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InteroHB.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -87,6 +88,11 @@
 			sourceTree = "<group>";
 		};
 		0FE4615D2F9F2D8F00A747F3 /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
+			sourceTree = "<group>";
+		};
+		0FE461DB2FA077FC00A747F3 /* Products */ = {
 			isa = PBXGroup;
 			name = Products;
 			sourceTree = "<group>";
@@ -170,6 +176,10 @@
 				{
 					ProductGroup = 0FE45E962F9386B200A747F3 /* Products */;
 					ProjectRef = 0FE45E802F9386B200A747F3 /* InteroHB.xcodeproj */;
+				},
+				{
+					ProductGroup = 0FE461DB2FA077FC00A747F3 /* Products */;
+					ProjectRef = 0FE461C22FA077FC00A747F3 /* InteroHB.xcodeproj */;
 				},
 				{
 					ProductGroup = 0FE460E02F9B290800A747F3 /* Products */;
@@ -334,7 +344,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 64UF824L5L;
 				ENABLE_APP_SANDBOX = YES;
@@ -399,7 +409,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 64UF824L5L;
 				ENABLE_APP_SANDBOX = YES;

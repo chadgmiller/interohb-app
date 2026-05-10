@@ -52,7 +52,6 @@ final class PurchaseManager: ObservableObject {
 #endif
 
     private var updatesTask: Task<Void, Never>?
-    private var entitlementRefreshTask: Task<Void, Never>?
     private var locallyVerifiedPremiumExpirationDate: Date?
     private let instanceID = UUID().uuidString.prefix(8)
 
@@ -63,35 +62,17 @@ final class PurchaseManager: ObservableObject {
 
     deinit {
         updatesTask?.cancel()
-        entitlementRefreshTask?.cancel()
     }
 
     func start() async {
         debugLog("PurchaseManager start instance=\(instanceID)")
+        await finishStaleTransactions()
         _ = await ensureProductsLoaded()
         await refreshEntitlements()
     }
 
-    func startEntitlementRefreshLoop() {
-        debugLog("Starting entitlement refresh loop instance=\(instanceID)")
-        entitlementRefreshTask?.cancel()
-        entitlementRefreshTask = Task { [weak self] in
-            guard let self else { return }
-
-            await self.refreshEntitlements()
-
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 15_000_000_000)
-                guard !Task.isCancelled else { break }
-                await self.refreshEntitlements()
-            }
-        }
-    }
-
-    func stopEntitlementRefreshLoop() {
-        debugLog("Stopping entitlement refresh loop instance=\(instanceID)")
-        entitlementRefreshTask?.cancel()
-        entitlementRefreshTask = nil
+    func refreshOnForeground() async {
+        await refreshEntitlements()
     }
     
     func requestProducts() async {
@@ -251,7 +232,17 @@ final class PurchaseManager: ObservableObject {
                 case .verified(let transaction):
                     storeKitLog("Purchase verified for \(product.id). Transaction: \(transaction.id)")
                     debugLog("Verified purchase callback: \(describe(transaction: transaction))")
+
+                    if let expirationDate = transaction.expirationDate, expirationDate <= Date() {
+                        debugLog("Purchase callback returned a stale expired transaction, finishing it: \(describe(transaction: transaction))")
+                        await transaction.finish()
+                        purchaseInfoMessage = nil
+                        purchaseErrorMessage = "Your previous subscription period was still processing. Please tap the subscribe button again to complete your purchase."
+                        return
+                    }
+
                     await logStoreKitSnapshot(context: "before finishing callback transaction", product: product)
+                    applyVerifiedPremiumAccessIfActive(from: transaction)
                     await transaction.finish()
                     debugLog("Finished verified transaction: \(transaction.id)")
                     await refreshEntitlements()
@@ -373,6 +364,20 @@ final class PurchaseManager: ObservableObject {
         debugLog("Premium active: \(premiumActive)")
     }
 
+    private func finishStaleTransactions() async {
+        debugLog("Finishing any stale unfinished transactions at startup.")
+        for await result in Transaction.unfinished {
+            switch result {
+            case .verified(let transaction):
+                debugLog("Finishing stale transaction: \(describe(transaction: transaction))")
+                await transaction.finish()
+            case .unverified(let transaction, _):
+                debugLog("Finishing stale unverified transaction: id=\(transaction.id)")
+                await transaction.finish()
+            }
+        }
+    }
+
     private func observeTransactionUpdates() -> Task<Void, Never> {
         Task.detached(priority: .background) { [weak self] in
             guard let self else { return }
@@ -416,10 +421,8 @@ final class PurchaseManager: ObservableObject {
 
     private func waitForPremiumActivation() async {
         debugLog("Waiting for Premium activation after verified purchase.")
-        try? await AppStore.sync()
-        debugLog("Finished AppStore.sync() while waiting for Premium activation.")
 
-        for attempt in 0..<5 {
+        for attempt in 0..<15 {
             await refreshEntitlements()
             if let premiumProduct {
                 await logLatestTransaction(for: premiumProduct, context: "waitForPremiumActivation attempt \(attempt + 1)")
@@ -439,7 +442,7 @@ final class PurchaseManager: ObservableObject {
                 return
             }
 
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
         }
     }
 

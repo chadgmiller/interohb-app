@@ -81,14 +81,11 @@ struct InteroHBApp: App {
             .environmentObject(purchaseManager)
             .task {
                 await purchaseManager.start()
-                purchaseManager.startEntitlementRefreshLoop()
                 _ = HeartBeatManager.shared
             }
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {
-                    purchaseManager.startEntitlementRefreshLoop()
-                } else {
-                    purchaseManager.stopEntitlementRefreshLoop()
+                    Task { await purchaseManager.refreshOnForeground() }
                 }
             }
             .preferredColorScheme(appAppearanceMode.colorScheme)
